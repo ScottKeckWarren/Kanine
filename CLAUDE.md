@@ -12,3 +12,55 @@ When the project stack is chosen, update this file with:
 - Build, lint, and test commands
 - How to run a single test
 - Architecture overview
+
+## Branching & PR Policy
+
+Never commit directly to `main`. All changes go through a PR:
+
+1. Create a feature branch off `main`
+2. Make changes
+3. Open PR via `.claude/support-scripts/gh/create-pr.sh`
+4. Merge only after PR is open (no force-pushes to `main`)
+
+## Development Philosophy
+
+**Documentation-driven:** Write or update docs/specs before writing code. If the intent isn't documented, clarify it first.
+
+**Test-driven:** Write failing tests before implementation. No feature ships without tests covering the intended behavior.
+
+**Best judgement:** Apply best judgement when requirements are ambiguous, a path has tradeoffs, or instructions don't cover an edge case. Prefer the choice that is safer, simpler, and more reversible. Document the reasoning if the decision is non-obvious.
+
+## Dangerous Action Policy
+
+Before executing any action that could have irreversible or shared-state consequences (git commit, git push, gh CLI, CI/CD triggers, database migrations, deployments, etc.), create a support script at:
+
+```
+.claude/support-scripts/<command>/<action>.sh
+```
+
+Examples:
+- `.claude/support-scripts/git/commit.sh`
+- `.claude/support-scripts/git/push.sh`
+- `.claude/support-scripts/gh/create-pr.sh`
+
+### Script requirements
+
+Each script must:
+1. Validate preconditions (branch name, clean working tree, required env vars, etc.)
+2. Echo what it will do before doing it
+3. Exit non-zero with a clear message on any failed check
+4. Perform the action deterministically via CLI tools — no ad-hoc shell one-liners
+
+### Pre-tool hooks
+
+When a support script is created, also add a corresponding `PreToolUse` hook in `.claude/settings.json` that fires when the raw command is about to run and redirects to the script instead. The hook should:
+
+1. Detect the relevant tool/command pattern (e.g. `Bash` tool with `git commit` or `git push`)
+2. Print a message pointing to the support script path
+3. Block the raw command so the script is used instead
+
+This ensures the safeguards are enforced automatically, not just by convention.
+
+### Rationale
+
+Deterministic scripts are auditable, repeatable, and catch edge cases that inline commands miss. Scripts live in the repo so they evolve alongside project requirements.

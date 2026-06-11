@@ -51,7 +51,7 @@ From the diff analysis, synthesize:
 
 **Branch name**: `[type]/[short-kebab-description]` — type is one of: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`. Max 50 chars total. No ticket numbers unless the user mentions one.
 
-**Header** (commit subject): Conventional Commits format. `type(scope): short imperative description`. 50 chars max. No period.
+**Header** (commit subject): Conventional Commits format. `type: short imperative description`. 50 chars max. No period. Match the scope style already used in the repo — check `git log --oneline -10`. If existing commits omit scope, omit it here too.
 
 **What Changed**: Bullet list of concrete changes. What files/functions/components were modified and how. Specific, not vague. No "various improvements."
 
@@ -74,13 +74,14 @@ If they say no or request changes, revise and confirm again before continuing.
 
 ### 6. Create branch and commit
 
-Run sequentially — each step must succeed before the next:
+Run sequentially — each step must succeed before the next.
 
+Create the branch via support script:
 ```bash
-git checkout -b [branch-name] [base-branch]
+.claude/support-scripts/git/create-branch.sh [branch-name] [base-branch]
 ```
 
-Write the commit message to `.git/COMMIT_EDITMSG_PR` (temporary file in git dir, not tracked):
+Write the commit message to `tmp/COMMIT_EDITMSG_PR`:
 
 ```
 [header]
@@ -98,41 +99,40 @@ How to Test
 [steps]
 ```
 
-Then commit:
+Commit via support script:
 ```bash
-git commit -F .git/COMMIT_EDITMSG_PR
+.claude/support-scripts/git/commit.sh tmp/COMMIT_EDITMSG_PR
 ```
 
 If the commit fails (pre-commit hook, lint error, etc.), report the exact error output and stop. Do NOT use `--no-verify`.
 
 ### 7. Push to origin
 
+Push via support script:
 ```bash
-git push -u origin [branch-name]
+.claude/support-scripts/git/push.sh
 ```
 
 If push fails, report exact error. Do not force push.
 
 ### 8. Create PR via gh
 
-```bash
-gh pr create \
-  --title "[header]" \
-  --base [base-branch] \
-  --body "$(cat <<'EOF'
-What Changed
-------------
+Write the PR body to `tmp/PR_BODY`:
+
+```
+## What Changed
 [bullets]
 
-Why We Changed It
------------------
+## Why We Changed It
 [explanation]
 
-How to Test
------------
+## How to Test
 [steps]
-EOF
-)"
+```
+
+Open PR via support script:
+```bash
+.claude/support-scripts/gh/create-pr.sh "[header]" [base-branch] tmp/PR_BODY
 ```
 
 Output the PR URL to the user.
