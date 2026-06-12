@@ -29,6 +29,11 @@
         "test": "./vendor/bin/phpunit",
         "lint": "./vendor/bin/phpcs"
     },
+    "config": {
+        "platform": {
+            "php": "8.2.0"
+        }
+    },
     "minimum-stability": "stable",
     "prefer-stable": true
 }

@@ -24,7 +24,12 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Run PHPUnit with coverage
-        run: ./vendor/bin/phpunit --coverage-clover coverage.xml
+        run: |
+          if find src -name '*.php' | grep -q .; then
+            ./vendor/bin/phpunit --coverage-clover coverage.xml
+          else
+            ./vendor/bin/phpunit --no-coverage
+          fi
 
       - name: Enforce 90% line coverage
         run: php bin/check-coverage.php coverage.xml

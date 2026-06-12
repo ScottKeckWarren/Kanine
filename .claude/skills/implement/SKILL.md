@@ -176,14 +176,20 @@ Commit via support script:
 If the commit fails (hook, lint error, etc.), report the exact error output and
 stop. Do NOT use `--no-verify`.
 
-### 10. Report to user
+### 10. Create pull request
+
+Invoke the `create-pull-request` skill. It will handle pushing the branch,
+writing the PR description, and opening the PR via `gh`. Pass it the issue
+number so it can include `Closes #<number>` in the PR body.
+
+### 11. Report to user
 
 Tell the user:
 - Branch name
 - Issue number and title
 - Number of files changed
 - Test count (from `composer test` output)
-- Next step: "Run `/create-pull-request` to open a PR, or push manually."
+- PR URL (from the `create-pull-request` skill output)
 
 ## Rules
 
