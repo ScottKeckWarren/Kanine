@@ -4,14 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-Repository is in initial setup — only a LICENSE file exists. No build system, language, or framework has been established yet.
+PHP project with Composer configured. Stack: PHP 8.2+, Symfony Console, Symfony YAML, PHP TUI, PHPUnit 11.
 
-## Getting Started
+## Commands
 
-When the project stack is chosen, update this file with:
-- Build, lint, and test commands
-- How to run a single test
-- Architecture overview
+```bash
+composer install       # install dependencies
+composer test          # run test suite (PHPUnit)
+composer lint          # run linter (phpcs)
+./vendor/bin/phpunit --filter TestClassName   # run single test class
+```
 
 ## Branching & PR Policy
 
@@ -50,6 +52,10 @@ Each script must:
 2. Echo what it will do before doing it
 3. Exit non-zero with a clear message on any failed check
 4. Perform the action deterministically via CLI tools — no ad-hoc shell one-liners
+
+### Invoking scripts
+
+Always invoke support scripts directly (e.g. `./.claude/support-scripts/gh/view-issue.sh 4`), never via `bash <script>`. Scripts must be executable (`chmod +x`).
 
 ### Pre-tool hooks
 
