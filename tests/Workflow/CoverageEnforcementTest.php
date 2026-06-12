@@ -69,15 +69,27 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertStringContainsString('90%', $output);
     }
 
-    public function test_it_fails_when_there_are_zero_statements(): void
+    public function test_it_passes_with_warning_when_there_are_zero_statements(): void
     {
         $coverageXml = $this->buildCoverageXml(statements: 0, covered: 0);
         $xmlPath     = $this->writeTempXml($coverageXml);
 
         [$exitCode, $output] = $this->runScript($xmlPath);
 
-        $this->assertSame(1, $exitCode);
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('WARNING', $output);
         $this->assertStringContainsString('No statements found', $output);
+    }
+
+    public function test_it_passes_with_warning_when_coverage_file_is_missing(): void
+    {
+        $xmlPath = $this->tempDir . '/nonexistent.xml';
+
+        [$exitCode, $output] = $this->runScript($xmlPath);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('WARNING', $output);
+        $this->assertStringContainsString('not found', $output);
     }
 
     public function test_it_aggregates_multiple_metrics_elements(): void
