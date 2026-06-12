@@ -57,6 +57,10 @@ Each script must:
 
 Always invoke support scripts directly (e.g. `./.claude/support-scripts/gh/view-issue.sh 4`), never via `bash <script>`. Scripts must be executable (`chmod +x`).
 
+### File paths
+
+Always use relative paths when referencing files — in support scripts, workflow YAML, config files, and any other context. Never use absolute paths.
+
 ### Pre-tool hooks
 
 When a support script is created, also add a corresponding `PreToolUse` hook in `.claude/settings.json` that fires when the raw command is about to run and redirects to the script instead. The hook should:
