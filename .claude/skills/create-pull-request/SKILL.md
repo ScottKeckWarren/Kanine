@@ -59,6 +59,8 @@ From the diff analysis, synthesize:
 
 **How to Test**: Concrete steps a reviewer can follow to verify the change works. If the change is purely mechanical (rename, reformat), say so explicitly.
 
+**Closes**: If the user provides an issue number (e.g., "Closes #4"), append `Closes #[number]` as a standalone line at the end of the PR body. If no issue number is given, ask: "Does this close a GitHub issue? If so, which number?"
+
 If the motivation is unclear from the diff, ask before writing the PR body — don't invent a reason.
 
 ### 5. Confirm with user
@@ -128,7 +130,11 @@ Write the PR body to `tmp/PR_BODY`:
 
 ## How to Test
 [steps]
+
+Closes #[number]
 ```
+
+Omit the `Closes` line if no issue number was provided.
 
 Open PR via support script:
 ```bash
