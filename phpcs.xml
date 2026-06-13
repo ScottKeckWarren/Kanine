@@ -2,6 +2,10 @@
 <ruleset name="Kanine">
     <description>PSR-12 + Slevomat type safety, class order, and strict types</description>
 
+    <file>src</file>
+    <file>tests</file>
+    <file>bin</file>
+
     <arg name="extensions" value="php"/>
     <arg name="colors"/>
     <arg value="sp"/>
@@ -41,11 +45,20 @@
         </properties>
     </rule>
 
-    <!-- Class structure / member order -->
+    <!-- Tests: allow snake_case method names and PHPUnit setUp/tearDown ordering -->
+    <rule ref="PSR1.Methods.CamelCapsMethodName">
+        <exclude-pattern>tests/</exclude-pattern>
+    </rule>
+    <rule ref="SlevomatCodingStandard.Classes.ClassStructure">
+        <exclude-pattern>tests/</exclude-pattern>
+    </rule>
+
+    <!-- Class structure / member order (src only) -->
     <rule ref="SlevomatCodingStandard.Classes.ClassStructure">
         <properties>
             <property name="groups" type="array">
                 <element value="uses"/>
+                <element value="enum cases"/>
                 <element value="constants"/>
                 <element value="public static properties"/>
                 <element value="protected static properties"/>
@@ -56,10 +69,19 @@
                 <element value="constructor"/>
                 <element value="static constructors"/>
                 <element value="destructor"/>
+                <element value="magic methods"/>
+                <element value="public static abstract methods"/>
+                <element value="public static final methods"/>
                 <element value="public static methods"/>
+                <element value="protected static abstract methods"/>
+                <element value="protected static final methods"/>
                 <element value="protected static methods"/>
                 <element value="private static methods"/>
+                <element value="public abstract methods"/>
+                <element value="public final methods"/>
                 <element value="public methods"/>
+                <element value="protected abstract methods"/>
+                <element value="protected final methods"/>
                 <element value="protected methods"/>
                 <element value="private methods"/>
             </property>
