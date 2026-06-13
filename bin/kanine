@@ -7,7 +7,12 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use ScottKeckWarren\Kanine\Config\ConfigLoader;
 use ScottKeckWarren\Kanine\Console\Application;
+use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
 use ScottKeckWarren\Kanine\Logger\LoggerFactory;
+use ScottKeckWarren\Kanine\Supervisor\HttpServer;
+use ScottKeckWarren\Kanine\Supervisor\PupRegistry;
+use ScottKeckWarren\Kanine\Supervisor\Supervisor;
+use ScottKeckWarren\Kanine\Supervisor\TaskQueue;
 
 $config  = (new ConfigLoader())->load();
 $logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
@@ -17,7 +22,13 @@ if (!is_dir($logDir)) {
     mkdir($logDir, 0755, true);
 }
 
-$logger = (new LoggerFactory())->create(logFile: $logFile);
-$app    = new Application($logger);
+$logger      = (new LoggerFactory())->create(logFile: $logFile);
+$taskQueue   = new TaskQueue();
+$pupRegistry = new PupRegistry();
+$httpServer  = new HttpServer($config->host, $config->port, $taskQueue, $pupRegistry, $logger);
+$supervisor  = new Supervisor($taskQueue, $pupRegistry, $httpServer, $logger);
+
+$app = new Application($logger);
+$app->add(new ServeCommand($config, $supervisor, $logger));
 
 exit($app->run());
