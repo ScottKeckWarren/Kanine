@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ScottKeckWarren\Kanine\Tests\Console;
 
-use Monolog\Logger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use ScottKeckWarren\Kanine\Console\Application;
@@ -16,7 +15,7 @@ final class ApplicationTest extends TestCase
     // Instantiation
     // -------------------------------------------------------------------------
 
-    public function test_application_is_instantiable_with_logger(): void
+    public function testApplicationIsInstantiableWithLogger(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $app    = new Application($logger);
@@ -24,7 +23,7 @@ final class ApplicationTest extends TestCase
         $this->assertInstanceOf(Application::class, $app);
     }
 
-    public function test_application_extends_symfony_console_application(): void
+    public function testApplicationExtendsSymfonyConsoleApplication(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $app    = new Application($logger);
@@ -36,7 +35,7 @@ final class ApplicationTest extends TestCase
     // Application identity
     // -------------------------------------------------------------------------
 
-    public function test_application_name_is_kanine(): void
+    public function testApplicationNameIsKanine(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $app    = new Application($logger);
@@ -48,7 +47,7 @@ final class ApplicationTest extends TestCase
     // Logger is stored
     // -------------------------------------------------------------------------
 
-    public function test_get_logger_returns_the_injected_logger(): void
+    public function testGetLoggerReturnsTheInjectedLogger(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $app    = new Application($logger);
@@ -60,7 +59,7 @@ final class ApplicationTest extends TestCase
     // Default commands
     // -------------------------------------------------------------------------
 
-    public function test_application_registers_default_symfony_commands(): void
+    public function testApplicationRegistersDefaultSymfonyCommands(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $app    = new Application($logger);
@@ -69,7 +68,7 @@ final class ApplicationTest extends TestCase
         $this->assertTrue($app->has('list'));
     }
 
-    public function test_application_auto_exit_can_be_disabled(): void
+    public function testApplicationAutoExitCanBeDisabled(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $app    = new Application($logger);

@@ -15,22 +15,11 @@ final class LoggerFactoryTest extends TestCase
 {
     private string $tempDir;
 
-    protected function setUp(): void
-    {
-        $this->tempDir = sys_get_temp_dir() . '/kanine-logger-test-' . uniqid('', true);
-        mkdir($this->tempDir, 0777, true);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->removeDirectory($this->tempDir);
-    }
-
     // -------------------------------------------------------------------------
     // Instantiation
     // -------------------------------------------------------------------------
 
-    public function test_logger_factory_is_instantiable_without_arguments(): void
+    public function testLoggerFactoryIsInstantiableWithoutArguments(): void
     {
         $factory = new LoggerFactory();
 
@@ -41,7 +30,7 @@ final class LoggerFactoryTest extends TestCase
     // create() returns a PSR-3 LoggerInterface
     // -------------------------------------------------------------------------
 
-    public function test_create_returns_psr3_logger(): void
+    public function testCreateReturnsPsr3Logger(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -49,7 +38,7 @@ final class LoggerFactoryTest extends TestCase
         $this->assertInstanceOf(LoggerInterface::class, $logger);
     }
 
-    public function test_create_returns_monolog_logger_instance(): void
+    public function testCreateReturnsMonologLoggerInstance(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -61,7 +50,7 @@ final class LoggerFactoryTest extends TestCase
     // Handlers
     // -------------------------------------------------------------------------
 
-    public function test_create_attaches_stream_handler(): void
+    public function testCreateAttachesStreamHandler(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -77,7 +66,7 @@ final class LoggerFactoryTest extends TestCase
         $this->assertTrue($hasStream, 'Logger should have a StreamHandler attached');
     }
 
-    public function test_create_attaches_rotating_file_handler(): void
+    public function testCreateAttachesRotatingFileHandler(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -97,7 +86,7 @@ final class LoggerFactoryTest extends TestCase
     // Log file is created when a message is written
     // -------------------------------------------------------------------------
 
-    public function test_writing_log_message_creates_log_file(): void
+    public function testWritingLogMessageCreatesLogFile(): void
     {
         $logFile = $this->tempDir . '/kanine.log';
         $factory = new LoggerFactory();
@@ -114,7 +103,7 @@ final class LoggerFactoryTest extends TestCase
     // Log output includes timestamp and level
     // -------------------------------------------------------------------------
 
-    public function test_log_line_includes_level(): void
+    public function testLogLineIncludesLevel(): void
     {
         $logFile = $this->tempDir . '/kanine.log';
         $factory = new LoggerFactory();
@@ -129,7 +118,7 @@ final class LoggerFactoryTest extends TestCase
         $this->assertStringContainsString('INFO', $contents);
     }
 
-    public function test_log_line_includes_timestamp(): void
+    public function testLogLineIncludesTimestamp(): void
     {
         $logFile = $this->tempDir . '/kanine.log';
         $factory = new LoggerFactory();
@@ -149,7 +138,7 @@ final class LoggerFactoryTest extends TestCase
     // Channel name
     // -------------------------------------------------------------------------
 
-    public function test_create_uses_kanine_as_channel_name(): void
+    public function testCreateUsesKanineAsChannelName(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -157,7 +146,7 @@ final class LoggerFactoryTest extends TestCase
         $this->assertSame('kanine', $logger->getName());
     }
 
-    public function test_create_uses_custom_channel_name_when_provided(): void
+    public function testCreateUsesCustomChannelNameWhenProvided(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(
@@ -172,7 +161,7 @@ final class LoggerFactoryTest extends TestCase
     // Handler configuration
     // -------------------------------------------------------------------------
 
-    public function test_stream_handler_level_is_debug(): void
+    public function testStreamHandlerLevelIsDebug(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -187,7 +176,7 @@ final class LoggerFactoryTest extends TestCase
         $this->fail('StreamHandler not found');
     }
 
-    public function test_rotating_file_handler_level_is_debug(): void
+    public function testRotatingFileHandlerLevelIsDebug(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -202,7 +191,7 @@ final class LoggerFactoryTest extends TestCase
         $this->fail('RotatingFileHandler not found');
     }
 
-    public function test_rotating_file_handler_max_files_is_seven(): void
+    public function testRotatingFileHandlerMaxFilesIsSeven(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -218,7 +207,7 @@ final class LoggerFactoryTest extends TestCase
         $this->fail('RotatingFileHandler not found');
     }
 
-    public function test_stream_handler_target_is_stderr(): void
+    public function testStreamHandlerTargetIsStderr(): void
     {
         $factory = new LoggerFactory();
         $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
@@ -232,6 +221,21 @@ final class LoggerFactoryTest extends TestCase
         }
 
         $this->fail('StreamHandler not found');
+    }
+
+    // -------------------------------------------------------------------------
+    // PHPUnit lifecycle
+    // -------------------------------------------------------------------------
+
+    protected function setUp(): void
+    {
+        $this->tempDir = sys_get_temp_dir() . '/kanine-logger-test-' . uniqid('', true);
+        mkdir($this->tempDir, 0777, true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDirectory($this->tempDir);
     }
 
     // -------------------------------------------------------------------------

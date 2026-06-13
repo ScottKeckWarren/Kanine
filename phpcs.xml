@@ -45,15 +45,7 @@
         </properties>
     </rule>
 
-    <!-- Tests: allow snake_case method names and PHPUnit setUp/tearDown ordering -->
-    <rule ref="PSR1.Methods.CamelCapsMethodName">
-        <exclude-pattern>tests/</exclude-pattern>
-    </rule>
-    <rule ref="SlevomatCodingStandard.Classes.ClassStructure">
-        <exclude-pattern>tests/</exclude-pattern>
-    </rule>
-
-    <!-- Class structure / member order (src only) -->
+    <!-- Class structure / member order -->
     <rule ref="SlevomatCodingStandard.Classes.ClassStructure">
         <properties>
             <property name="groups" type="array">

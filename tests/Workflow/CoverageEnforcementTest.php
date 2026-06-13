@@ -18,20 +18,7 @@ final class CoverageEnforcementTest extends TestCase
     private string $scriptPath;
     private string $tempDir;
 
-    protected function setUp(): void
-    {
-        $this->tempDir    = sys_get_temp_dir() . '/kanine-coverage-test-' . uniqid('', true);
-        $this->scriptPath = dirname(__DIR__, 2) . '/bin/check-coverage.php';
-
-        mkdir($this->tempDir, 0777, true);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->removeDirectory($this->tempDir);
-    }
-
-    public function test_it_passes_when_coverage_is_exactly_90_percent(): void
+    public function testItPassesWhenCoverageIsExactly90Percent(): void
     {
         $coverageXml = $this->buildCoverageXml(statements: 100, covered: 90);
         $xmlPath     = $this->writeTempXml($coverageXml);
@@ -43,7 +30,7 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertStringContainsString('PASS', $output);
     }
 
-    public function test_it_passes_when_coverage_is_above_90_percent(): void
+    public function testItPassesWhenCoverageIsAbove90Percent(): void
     {
         $coverageXml = $this->buildCoverageXml(statements: 100, covered: 95);
         $xmlPath     = $this->writeTempXml($coverageXml);
@@ -55,7 +42,7 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertStringContainsString('PASS', $output);
     }
 
-    public function test_it_fails_when_coverage_is_below_90_percent(): void
+    public function testItFailsWhenCoverageIsBelow90Percent(): void
     {
         $coverageXml = $this->buildCoverageXml(statements: 100, covered: 89);
         $xmlPath     = $this->writeTempXml($coverageXml);
@@ -69,7 +56,7 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertStringContainsString('90%', $output);
     }
 
-    public function test_it_passes_with_warning_when_there_are_zero_statements(): void
+    public function testItPassesWithWarningWhenThereAreZeroStatements(): void
     {
         $coverageXml = $this->buildCoverageXml(statements: 0, covered: 0);
         $xmlPath     = $this->writeTempXml($coverageXml);
@@ -81,7 +68,7 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertStringContainsString('No statements found', $output);
     }
 
-    public function test_it_passes_with_warning_when_coverage_file_is_missing(): void
+    public function testItPassesWithWarningWhenCoverageFileIsMissing(): void
     {
         $xmlPath = $this->tempDir . '/nonexistent.xml';
 
@@ -92,7 +79,7 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertStringContainsString('not found', $output);
     }
 
-    public function test_it_aggregates_multiple_metrics_elements(): void
+    public function testItAggregatesMultipleMetricsElements(): void
     {
         $coverageXml = $this->buildCoverageXmlMultipleMetrics([
             ['statements' => 50, 'covered' => 45],
@@ -106,6 +93,23 @@ final class CoverageEnforcementTest extends TestCase
         $this->assertSame(0, $exitCode);
         $this->assertStringContainsString('Line coverage: 91.00%', $output);
         $this->assertStringContainsString('PASS', $output);
+    }
+
+    // -------------------------------------------------------------------------
+    // PHPUnit lifecycle
+    // -------------------------------------------------------------------------
+
+    protected function setUp(): void
+    {
+        $this->tempDir    = sys_get_temp_dir() . '/kanine-coverage-test-' . uniqid('', true);
+        $this->scriptPath = dirname(__DIR__, 2) . '/bin/check-coverage.php';
+
+        mkdir($this->tempDir, 0777, true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDirectory($this->tempDir);
     }
 
     // -------------------------------------------------------------------------
