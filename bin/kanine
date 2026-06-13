@@ -1,0 +1,23 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once dirname(__DIR__) . '/vendor/autoload.php';
+
+use ScottKeckWarren\Kanine\Config\ConfigLoader;
+use ScottKeckWarren\Kanine\Console\Application;
+use ScottKeckWarren\Kanine\Logger\LoggerFactory;
+
+$config  = (new ConfigLoader())->load();
+$logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
+
+$logDir = dirname($logFile);
+if (!is_dir($logDir)) {
+    mkdir($logDir, 0755, true);
+}
+
+$logger = (new LoggerFactory())->create(logFile: $logFile);
+$app    = new Application($logger);
+
+exit($app->run());
