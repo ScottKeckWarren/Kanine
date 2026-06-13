@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace ScottKeckWarren\Kanine\Console\Command;
 
+use Closure;
 use Psr\Log\LoggerInterface;
+use ScottKeckWarren\Kanine\Pup\ClaudeRunner;
 use ScottKeckWarren\Kanine\Pup\PupClientInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -13,11 +15,17 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class PupCommand extends Command
 {
+    /** @var Closure(string $title, string $body): ClaudeRunner */
+    private readonly Closure $runnerFactory;
+
     public function __construct(
         private readonly PupClientInterface $pupClient,
         private readonly LoggerInterface $logger,
         private readonly int $maxPolls = PHP_INT_MAX,
+        ?Closure $runnerFactory = null,
     ) {
+        $this->runnerFactory = $runnerFactory
+            ?? static fn (string $title, string $body): ClaudeRunner => new ClaudeRunner($title, $body);
         parent::__construct('pup');
     }
 
@@ -38,24 +46,42 @@ final class PupCommand extends Command
 
         $this->logger->info("Registering pup {$pupId} from {$hostname}");
 
-        $registration    = $this->pupClient->register(pupId: $pupId, hostname: $hostname);
-        $token           = $registration['token'];
-        $pollIntervalMs  = $registration['poll_interval_ms'];
+        $registration   = $this->pupClient->register(pupId: $pupId, hostname: $hostname);
+        $token          = $registration['token'];
+        $pollIntervalMs = $registration['poll_interval_ms'];
 
         $this->logger->info("Registered pup {$pupId}; poll_interval_ms={$pollIntervalMs}");
 
-        $status    = 'idle';
-        $pollCount = 0;
+        $status             = 'idle';
+        $pollCount          = 0;
+        $runner             = null;
+        $currentIssueNumber = null;
 
         while ($pollCount < $this->maxPolls) {
+            if ($runner !== null && !$runner->isRunning()) {
+                $this->logger->info(
+                    "Claude exited with code {$runner->getExitCode()} for task #{$currentIssueNumber}",
+                );
+                $runner             = null;
+                $currentIssueNumber = null;
+                $status             = 'idle';
+            }
+
             $result  = $this->pupClient->poll(pupId: $pupId, token: $token, status: $status);
             $newTask = $result['new_task'];
 
             if ($newTask !== null) {
                 $issueNumber = $newTask['issue_number'];
                 $title       = $newTask['title'];
+                $body        = $newTask['body'] ?? '';
                 $repo        = $newTask['repo'];
+
+                $this->logger->info("Starting claude for issue #{$issueNumber}: {$title}");
                 $this->logger->info("Assigned task #{$issueNumber}: {$title} ({$repo})");
+
+                $runner             = ($this->runnerFactory)($title, $body);
+                $currentIssueNumber = $issueNumber;
+                $runner->start();
                 $status = 'working';
             } else {
                 $this->logger->debug('No task assigned');
