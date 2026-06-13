@@ -24,7 +24,12 @@ You help the user turn staged git changes into a pull request with a structured,
 
 ### 1. Validate staged changes exist
 
-Run `git diff --cached --stat`. If nothing is staged, stop and tell the user: "No staged changes found. Stage files with `git add` first."
+Run the support script:
+```bash
+.claude/support-scripts/git/staged-stat.sh
+```
+
+If it exits non-zero, relay its output to the user and stop. Do NOT stage files on the user's behalf.
 
 ### 2. Analyze staged changes
 
@@ -153,7 +158,7 @@ Output the PR URL to the user.
 
 ## What NOT to do
 
-- Do not `git add` additional files — only commit what is already staged.
+- Do not `git add` any files — staging is the user's responsibility. Stop and prompt if nothing is staged.
 - Do not amend existing commits.
 - Do not skip hooks (`--no-verify`).
 - Do not force push.
