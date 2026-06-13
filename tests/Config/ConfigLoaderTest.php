@@ -12,22 +12,11 @@ final class ConfigLoaderTest extends TestCase
 {
     private string $tempDir;
 
-    protected function setUp(): void
-    {
-        $this->tempDir = sys_get_temp_dir() . '/kanine-config-test-' . uniqid('', true);
-        mkdir($this->tempDir, 0777, true);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->removeDirectory($this->tempDir);
-    }
-
     // -------------------------------------------------------------------------
     // Configuration value object
     // -------------------------------------------------------------------------
 
-    public function test_configuration_exposes_host(): void
+    public function testConfigurationExposesHost(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -41,7 +30,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('127.0.0.1', $config->host);
     }
 
-    public function test_configuration_exposes_port(): void
+    public function testConfigurationExposesPort(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -55,7 +44,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame(9090, $config->port);
     }
 
-    public function test_configuration_exposes_github_token(): void
+    public function testConfigurationExposesGithubToken(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -69,7 +58,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('my-secret-token', $config->githubToken);
     }
 
-    public function test_configuration_exposes_repositories(): void
+    public function testConfigurationExposesRepositories(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -83,7 +72,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame(['owner/repo-a', 'owner/repo-b'], $config->repositories);
     }
 
-    public function test_configuration_exposes_ready_label(): void
+    public function testConfigurationExposesReadyLabel(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -97,7 +86,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('my-label', $config->readyLabel);
     }
 
-    public function test_configuration_exposes_log_file(): void
+    public function testConfigurationExposesLogFile(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -111,7 +100,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('/var/log/kanine.log', $config->logFile);
     }
 
-    public function test_configuration_log_file_can_be_null(): void
+    public function testConfigurationLogFileCanBeNull(): void
     {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -129,7 +118,7 @@ final class ConfigLoaderTest extends TestCase
     // ConfigLoader: explicit path
     // -------------------------------------------------------------------------
 
-    public function test_loader_loads_config_from_explicit_path(): void
+    public function testLoaderLoadsConfigFromExplicitPath(): void
     {
         $yaml = $this->buildYaml(
             token: 'explicit-token',
@@ -146,7 +135,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('explicit-token', $config->githubToken);
     }
 
-    public function test_loader_loads_repositories_from_explicit_path(): void
+    public function testLoaderLoadsRepositoriesFromExplicitPath(): void
     {
         $yaml = $this->buildYaml(
             token: 'tok',
@@ -163,7 +152,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame(['owner/alpha', 'owner/beta'], $config->repositories);
     }
 
-    public function test_loader_loads_supervisor_settings_from_explicit_path(): void
+    public function testLoaderLoadsSupervisorSettingsFromExplicitPath(): void
     {
         $yaml = $this->buildYaml(
             token: 'tok',
@@ -181,7 +170,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame(8080, $config->port);
     }
 
-    public function test_loader_loads_ready_label_from_explicit_path(): void
+    public function testLoaderLoadsReadyLabelFromExplicitPath(): void
     {
         $yaml = $this->buildYaml(
             token: 'tok',
@@ -198,7 +187,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('custom: label', $config->readyLabel);
     }
 
-    public function test_loader_throws_when_explicit_path_does_not_exist(): void
+    public function testLoaderThrowsWhenExplicitPathDoesNotExist(): void
     {
         $loader = new ConfigLoader();
 
@@ -212,7 +201,7 @@ final class ConfigLoaderTest extends TestCase
     // ConfigLoader: token resolution from environment
     // -------------------------------------------------------------------------
 
-    public function test_loader_resolves_github_token_from_environment_variable(): void
+    public function testLoaderResolvesGithubTokenFromEnvironmentVariable(): void
     {
         $yaml = $this->buildYaml(
             token: null,
@@ -240,7 +229,7 @@ final class ConfigLoaderTest extends TestCase
     // ConfigLoader: fallback to defaults when no file is found
     // -------------------------------------------------------------------------
 
-    public function test_loader_falls_back_to_defaults_when_no_file_found(): void
+    public function testLoaderFallsBackToDefaultsWhenNoFileFound(): void
     {
         $loader = new ConfigLoader(
             defaultPaths: [$this->tempDir . '/nonexistent-a.yaml', $this->tempDir . '/nonexistent-b.yaml'],
@@ -251,7 +240,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertInstanceOf(Configuration::class, $config);
     }
 
-    public function test_loader_default_host_is_127_0_0_1(): void
+    public function testLoaderDefaultHostIs127001(): void
     {
         $loader = new ConfigLoader(
             defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
@@ -262,7 +251,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('127.0.0.1', $config->host);
     }
 
-    public function test_loader_default_port_is_3737(): void
+    public function testLoaderDefaultPortIs3737(): void
     {
         $loader = new ConfigLoader(
             defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
@@ -273,7 +262,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame(3737, $config->port);
     }
 
-    public function test_loader_default_ready_label(): void
+    public function testLoaderDefaultReadyLabel(): void
     {
         $loader = new ConfigLoader(
             defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
@@ -284,7 +273,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('kanine: ready', $config->readyLabel);
     }
 
-    public function test_loader_default_repositories_is_empty(): void
+    public function testLoaderDefaultRepositoriesIsEmpty(): void
     {
         $loader = new ConfigLoader(
             defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
@@ -299,7 +288,7 @@ final class ConfigLoaderTest extends TestCase
     // ConfigLoader: default path resolution order
     // -------------------------------------------------------------------------
 
-    public function test_loader_loads_from_first_found_default_path(): void
+    public function testLoaderLoadsFromFirstFoundDefaultPath(): void
     {
         $yaml = $this->buildYaml(
             token: 'first-found-token',
@@ -320,7 +309,7 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('first-found-token', $config->githubToken);
     }
 
-    public function test_loader_skips_missing_default_paths_and_uses_next_found(): void
+    public function testLoaderSkipsMissingDefaultPathsAndUsesNextFound(): void
     {
         $yaml = $this->buildYaml(
             token: 'second-found-token',
@@ -339,6 +328,21 @@ final class ConfigLoaderTest extends TestCase
         $config = $loader->load();
 
         $this->assertSame('second-found-token', $config->githubToken);
+    }
+
+    // -------------------------------------------------------------------------
+    // PHPUnit lifecycle
+    // -------------------------------------------------------------------------
+
+    protected function setUp(): void
+    {
+        $this->tempDir = sys_get_temp_dir() . '/kanine-config-test-' . uniqid('', true);
+        mkdir($this->tempDir, 0777, true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDirectory($this->tempDir);
     }
 
     // -------------------------------------------------------------------------

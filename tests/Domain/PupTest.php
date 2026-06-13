@@ -10,7 +10,7 @@ use ScottKeckWarren\Kanine\Domain\PupStatus;
 
 final class PupTest extends TestCase
 {
-    public function test_it_exposes_all_constructor_properties_when_idle(): void
+    public function testItExposesAllConstructorPropertiesWhenIdle(): void
     {
         $pup = new Pup(
             id: 'pup-001',
@@ -27,7 +27,7 @@ final class PupTest extends TestCase
         $this->assertNull($pup->assignedTaskId);
     }
 
-    public function test_it_exposes_assigned_task_id_when_working(): void
+    public function testItExposesAssignedTaskIdWhenWorking(): void
     {
         $pup = new Pup(
             id: 'pup-002',
@@ -41,7 +41,7 @@ final class PupTest extends TestCase
         $this->assertSame('task-099', $pup->assignedTaskId);
     }
 
-    public function test_it_is_immutable(): void
+    public function testItIsImmutable(): void
     {
         $pup = new Pup(
             id: 'pup-003',

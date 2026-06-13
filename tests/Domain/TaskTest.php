@@ -10,7 +10,7 @@ use ScottKeckWarren\Kanine\Domain\TaskState;
 
 final class TaskTest extends TestCase
 {
-    public function test_it_exposes_all_constructor_properties(): void
+    public function testItExposesAllConstructorProperties(): void
     {
         $task = new Task(
             id: 'task-001',
@@ -29,7 +29,7 @@ final class TaskTest extends TestCase
         $this->assertSame(TaskState::Queued, $task->state);
     }
 
-    public function test_it_accepts_assigned_state(): void
+    public function testItAcceptsAssignedState(): void
     {
         $task = new Task(
             id: 'task-002',
@@ -43,7 +43,7 @@ final class TaskTest extends TestCase
         $this->assertSame(TaskState::Assigned, $task->state);
     }
 
-    public function test_it_is_immutable(): void
+    public function testItIsImmutable(): void
     {
         $task = new Task(
             id: 'task-003',
