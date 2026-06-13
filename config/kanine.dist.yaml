@@ -1,0 +1,14 @@
+# kanine.dist.yaml — default configuration template
+# Copy this file to kanine.yaml and adjust to your environment.
+
+github:
+  repositories:
+    # - owner/repo
+  token_env: GITHUB_TOKEN   # name of the env var holding your GitHub PAT
+  ready_label: "kanine: ready"
+
+supervisor:
+  host: 127.0.0.1
+  port: 3737
+
+# log_file: /var/log/kanine.log   # optional; omit to disable file logging
