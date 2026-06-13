@@ -30,7 +30,7 @@
     ],
     "scripts": {
         "test": "./vendor/bin/phpunit",
-        "lint": "./vendor/bin/phpcs $(find src tests bin -name '*.php' 2>/dev/null | tr '\\n' ' ')"
+        "lint": "./vendor/bin/phpcs"
     },
     "config": {
         "platform": {

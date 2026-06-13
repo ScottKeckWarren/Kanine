@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Coverage enforcement script.
  *
@@ -14,6 +12,8 @@ declare(strict_types=1);
  * This script is invoked by .github/workflows/ci.yml and is tested by
  * tests/Workflow/CoverageEnforcementTest.php.
  */
+
+declare(strict_types=1);
 
 $xmlPath = $argv[1] ?? 'coverage.xml';
 
