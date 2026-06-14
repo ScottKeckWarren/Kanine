@@ -71,6 +71,10 @@ When a support script is created, also add a corresponding `PreToolUse` hook in 
 
 This ensures the safeguards are enforced automatically, not just by convention.
 
+### Script reference
+
+Full listing with usage: [`.ai/docs/support-scripts.md`](.ai/docs/support-scripts.md)
+
 ### Rationale
 
 Deterministic scripts are auditable, repeatable, and catch edge cases that inline commands miss. Scripts live in the repo so they evolve alongside project requirements.

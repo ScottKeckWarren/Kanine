@@ -13,6 +13,13 @@ if ! git remote get-url origin &>/dev/null; then
   exit 1
 fi
 
-echo "Pushing '$CURRENT_BRANCH' to origin..."
-git push -u origin "$CURRENT_BRANCH"
+FORCE_FLAG="${1:-}"
+
+if [[ "$FORCE_FLAG" == "--force" ]]; then
+  echo "Force-pushing '$CURRENT_BRANCH' to origin (--force-with-lease)..."
+  git push --force-with-lease -u origin "$CURRENT_BRANCH"
+else
+  echo "Pushing '$CURRENT_BRANCH' to origin..."
+  git push -u origin "$CURRENT_BRANCH"
+fi
 echo "Done."
