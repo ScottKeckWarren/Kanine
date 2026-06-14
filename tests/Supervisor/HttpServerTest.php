@@ -127,6 +127,59 @@ final class HttpServerTest extends TestCase
         $this->assertSame(404, $response->getStatusCode());
     }
 
+    // -------------------------------------------------------------------------
+    // Error handling: malformed JSON
+    // -------------------------------------------------------------------------
+
+    public function testHandleRegisterMalformedJsonReturns400(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', 'not-valid-json{');
+        $response = $this->server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testHandleRegisterMalformedJsonBodyContainsInvalidJsonCode(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', 'not-valid-json{');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame('INVALID_JSON', $body['code']);
+    }
+
+    public function testHandleRegisterMalformedJsonBodyContainsErrorMessage(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', '{bad json');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertArrayHasKey('error', $body);
+        $this->assertIsString($body['error']);
+        $this->assertNotEmpty($body['error']);
+    }
+
+    public function testHandlePollMalformedJsonReturns400(): void
+    {
+        $token   = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '{broken', "Bearer {$token}");
+
+        $response = $this->server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testHandlePollMalformedJsonBodyContainsInvalidJsonCode(): void
+    {
+        $token   = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '{broken', "Bearer {$token}");
+
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame('INVALID_JSON', $body['code']);
+    }
+
     protected function setUp(): void
     {
         $this->logger   = $this->createMock(LoggerInterface::class);

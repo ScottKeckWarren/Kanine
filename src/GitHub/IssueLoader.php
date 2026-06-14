@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace ScottKeckWarren\Kanine\GitHub;
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use ScottKeckWarren\Kanine\Domain\Task;
 use ScottKeckWarren\Kanine\Domain\TaskState;
+use Throwable;
 
 final class IssueLoader implements IssueLoaderInterface
 {
@@ -16,6 +19,7 @@ final class IssueLoader implements IssueLoaderInterface
         private readonly GitHubClientInterface $client,
         private readonly array $repositories,
         private readonly string $readyLabel,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -27,7 +31,12 @@ final class IssueLoader implements IssueLoaderInterface
         $tasks = [];
 
         foreach ($this->repositories as $repository) {
-            $issues = $this->client->fetchOpenIssues($repository);
+            try {
+                $issues = $this->client->fetchOpenIssues($repository);
+            } catch (Throwable $e) {
+                $this->logger->error("GitHub fetch failed: {$e->getMessage()}");
+                continue;
+            }
 
             foreach ($issues as $issue) {
                 if (!$this->hasReadyLabel($issue['labels'])) {

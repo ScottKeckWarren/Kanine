@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ScottKeckWarren\Kanine\Supervisor;
 
+use JsonException;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 use React\EventLoop\Loop;
@@ -67,8 +68,17 @@ final class HttpServer implements HttpServerInterface
 
     private function handleRegister(ServerRequestInterface $request): Response
     {
-        $body   = (string) $request->getBody();
-        $data   = json_decode($body, associative: true) ?? [];
+        $body = (string) $request->getBody();
+
+        try {
+            $data = $body !== ''
+                ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+        } catch (JsonException $e) {
+            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+        }
+
+        $data   = is_array($data) ? $data : [];
         $pupId  = $data['pup_id'] ?? null;
         $hostname = $data['hostname'] ?? null;
 
@@ -92,6 +102,16 @@ final class HttpServer implements HttpServerInterface
 
     private function handlePoll(ServerRequestInterface $request, string $pupId): Response
     {
+        $body = (string) $request->getBody();
+
+        if ($body !== '') {
+            try {
+                json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException $e) {
+                return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+            }
+        }
+
         $pup = $this->pupRegistry->find($pupId);
 
         if ($pup === null) {

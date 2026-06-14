@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace ScottKeckWarren\Kanine\Tests\GitHub;
 
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use RuntimeException;
 use ScottKeckWarren\Kanine\Domain\Task;
 use ScottKeckWarren\Kanine\Domain\TaskState;
 use ScottKeckWarren\Kanine\GitHub\GitHubClientInterface;
@@ -17,7 +19,12 @@ final class IssueLoaderTest extends TestCase
         $client = $this->createMock(GitHubClientInterface::class);
         $client->expects($this->never())->method('fetchOpenIssues');
 
-        $loader = new IssueLoader(client: $client, repositories: [], readyLabel: 'kanine: ready');
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: [],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+        );
 
         $tasks = $loader->load();
 
@@ -35,6 +42,7 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['owner/empty-repo'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
@@ -60,6 +68,7 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['owner/repo'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
@@ -97,6 +106,7 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['owner/repo'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
@@ -123,6 +133,7 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['owner/repo'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
@@ -163,6 +174,7 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['owner/repo-a', 'owner/repo-b'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
@@ -197,6 +209,7 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['owner/repo'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
@@ -222,11 +235,98 @@ final class IssueLoaderTest extends TestCase
             client: $client,
             repositories: ['myorg/myrepo'],
             readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tasks = $loader->load();
 
         $this->assertStringContainsString('myorg/myrepo', $tasks[0]->id);
         $this->assertStringContainsString('99', $tasks[0]->id);
+    }
+
+    // -------------------------------------------------------------------------
+    // Error handling: GitHub API exceptions
+    // -------------------------------------------------------------------------
+
+    public function testItReturnsEmptyArrayWhenGitHubClientThrows(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willThrowException(new RuntimeException('Connection refused'));
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tasks = $loader->load();
+
+        $this->assertSame([], $tasks);
+    }
+
+    public function testItLogsErrorWhenGitHubClientThrows(): void
+    {
+        $errorMessages = [];
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('error')
+            ->willReturnCallback(function (string $message) use (&$errorMessages): void {
+                $errorMessages[] = $message;
+            });
+
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willThrowException(new RuntimeException('API rate limit exceeded'));
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $logger,
+        );
+
+        $loader->load();
+
+        $this->assertNotEmpty($errorMessages);
+        $matched = array_filter(
+            $errorMessages,
+            fn (string $m): bool =>
+                str_contains($m, 'GitHub fetch failed') && str_contains($m, 'API rate limit exceeded'),
+        );
+        $this->assertNotEmpty($matched, 'Expected error log containing "GitHub fetch failed" and exception message');
+    }
+
+    public function testItContinuesToLoadFromRemainingReposWhenOneThrows(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willReturnCallback(function (string $repo): array {
+                if ($repo === 'owner/broken-repo') {
+                    throw new RuntimeException('Timeout');
+                }
+
+                return [
+                    [
+                        'number' => 5,
+                        'title'  => 'Good issue',
+                        'body'   => 'Body',
+                        'labels' => [['name' => 'kanine: ready']],
+                    ],
+                ];
+            });
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/broken-repo', 'owner/good-repo'],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tasks = $loader->load();
+
+        $this->assertCount(1, $tasks);
+        $this->assertSame('owner/good-repo', $tasks[0]->repo);
     }
 }
