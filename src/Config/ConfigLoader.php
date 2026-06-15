@@ -98,6 +98,19 @@ final class ConfigLoader implements ConfigLoaderInterface
     private function validate(Configuration $config, string $tokenEnv): void
     {
         if ($config->githubToken === '') {
+            if ($tokenEnv === self::DEFAULT_TOKEN_ENV) {
+                throw new \InvalidArgumentException(
+                    "ERROR: GITHUB_TOKEN env var not set.\n\n"
+                    . "Create a GitHub Personal Access Token:\n"
+                    . "  https://github.com/settings/tokens/new\n"
+                    . "  Required scopes: repo (private repos) or public_repo (public repos only)\n\n"
+                    . "Then export it in your shell:\n"
+                    . "  export GITHUB_TOKEN=ghp_yourtoken\n\n"
+                    . "Or add it permanently to ~/.zshrc (or ~/.bashrc):\n"
+                    . "  export GITHUB_TOKEN=ghp_yourtoken"
+                );
+            }
+
             throw new \InvalidArgumentException(
                 "ERROR: GITHUB_TOKEN env var not set. Export it or set token_env in kanine.yaml."
                 . " (token_env resolved to: {$tokenEnv})"
