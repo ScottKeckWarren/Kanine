@@ -6,6 +6,8 @@ namespace ScottKeckWarren\Kanine\Tests\Console;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use ScottKeckWarren\Kanine\Config\ConfigInitializerInterface;
+use ScottKeckWarren\Kanine\Config\ConfigLoaderInterface;
 use ScottKeckWarren\Kanine\Config\Configuration;
 use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
 use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
@@ -15,13 +17,11 @@ final class ServeCommandTest extends TestCase
 {
     public function testServeCommandNameIsServe(): void
     {
-        $logger     = $this->createMock(LoggerInterface::class);
-        $supervisor = $this->createMock(SupervisorInterface::class);
-
         $command = new ServeCommand(
-            config: $this->makeConfig(),
-            supervisor: $supervisor,
-            logger: $logger,
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $this->assertSame('serve', $command->getName());
@@ -29,15 +29,14 @@ final class ServeCommandTest extends TestCase
 
     public function testServeCommandCallsSupervisorBoot(): void
     {
-        $logger     = $this->createMock(LoggerInterface::class);
         $supervisor = $this->createMock(SupervisorInterface::class);
-
         $supervisor->expects($this->once())->method('boot');
 
         $command = new ServeCommand(
-            config: $this->makeConfig(),
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
             supervisor: $supervisor,
-            logger: $logger,
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tester = new CommandTester($command);
@@ -46,13 +45,11 @@ final class ServeCommandTest extends TestCase
 
     public function testServeCommandExitsZero(): void
     {
-        $logger     = $this->createMock(LoggerInterface::class);
-        $supervisor = $this->createMock(SupervisorInterface::class);
-
         $command = new ServeCommand(
-            config: $this->makeConfig(),
-            supervisor: $supervisor,
-            logger: $logger,
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
         );
 
         $tester = new CommandTester($command);
@@ -63,16 +60,15 @@ final class ServeCommandTest extends TestCase
 
     public function testServeCommandLogsStartup(): void
     {
-        $logger     = $this->createMock(LoggerInterface::class);
-        $supervisor = $this->createMock(SupervisorInterface::class);
-
+        $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->atLeastOnce())
             ->method('info')
             ->with($this->stringContains('serve'));
 
         $command = new ServeCommand(
-            config: $this->makeConfig(),
-            supervisor: $supervisor,
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
             logger: $logger,
         );
 
@@ -80,9 +76,80 @@ final class ServeCommandTest extends TestCase
         $tester->execute([]);
     }
 
-    private function makeConfig(): Configuration
+    public function testServeRunsWizardWhenConfigAbsent(): void
     {
-        return new Configuration(
+        $initializer = $this->makeInitializer(configExists: false);
+        $initializer->expects($this->once())->method('run');
+
+        $command = new ServeCommand(
+            configInitializer: $initializer,
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+    }
+
+    public function testServeDoesNotRunWizardWhenConfigPresent(): void
+    {
+        $initializer = $this->makeInitializer(configExists: true);
+        $initializer->expects($this->never())->method('run');
+
+        $command = new ServeCommand(
+            configInitializer: $initializer,
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Graceful shutdown — signal registration
+    // -------------------------------------------------------------------------
+
+    public function testServeRegistersSigintAndSigtermHandlers(): void
+    {
+        $registeredSignals = [];
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$registeredSignals): void {
+            $registeredSignals[] = $signal;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            signalInstaller: $signalInstaller,
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+
+        $this->assertContains(SIGINT, $registeredSignals);
+        $this->assertContains(SIGTERM, $registeredSignals);
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private function makeInitializer(bool $configExists): ConfigInitializerInterface
+    {
+        $initializer = $this->createMock(ConfigInitializerInterface::class);
+        $initializer->method('configExists')->willReturn($configExists);
+
+        return $initializer;
+    }
+
+    private function makeConfigLoader(): ConfigLoaderInterface
+    {
+        $config = new Configuration(
             host: '127.0.0.1',
             port: 3737,
             githubToken: 'gh-token',
@@ -90,5 +157,10 @@ final class ServeCommandTest extends TestCase
             readyLabel: 'kanine-ready',
             logFile: null,
         );
+
+        $loader = $this->createMock(ConfigLoaderInterface::class);
+        $loader->method('load')->willReturn($config);
+
+        return $loader;
     }
 }

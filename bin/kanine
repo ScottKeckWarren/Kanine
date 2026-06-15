@@ -6,8 +6,10 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use GuzzleHttp\Client;
+use ScottKeckWarren\Kanine\Config\ConfigInitializer;
 use ScottKeckWarren\Kanine\Config\ConfigLoader;
 use ScottKeckWarren\Kanine\Console\Application;
+use ScottKeckWarren\Kanine\Console\Command\InitCommand;
 use ScottKeckWarren\Kanine\Console\Command\PupCommand;
 use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
 use ScottKeckWarren\Kanine\Logger\LoggerFactory;
@@ -17,29 +19,56 @@ use ScottKeckWarren\Kanine\Supervisor\PupRegistry;
 use ScottKeckWarren\Kanine\Supervisor\Supervisor;
 use ScottKeckWarren\Kanine\Supervisor\TaskQueue;
 
-$config  = (new ConfigLoader())->load();
-$logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
-
-$logDir = dirname($logFile);
-if (!is_dir($logDir)) {
-    mkdir($logDir, 0755, true);
-}
-
-$logger = (new LoggerFactory())->create(logFile: $logFile);
-$app    = new Application($logger);
+$configLoader      = new ConfigLoader();
+$configInitializer = new ConfigInitializer();
 
 if (in_array('--pup', $argv ?? [], strict: true)) {
+    $config  = $configLoader->load();
+    $logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
+
+    $logDir = dirname($logFile);
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0755, true);
+    }
+
+    $logger = (new LoggerFactory())->create(logFile: $logFile);
+    $app    = new Application($logger);
+
     $_SERVER['argv'] = array_values(array_filter($_SERVER['argv'], fn($a) => $a !== '--pup'));
-    $supervisorUrl = getenv('KANINE_SUPERVISOR_URL') ?: 'http://localhost:3737';
-    $pupClient     = new PupClient(baseUrl: $supervisorUrl, guzzle: new Client());
+    $supervisorUrl   = getenv('KANINE_SUPERVISOR_URL') ?: 'http://localhost:3737';
+    $pupClient       = new PupClient(baseUrl: $supervisorUrl, guzzle: new Client());
     $app->add(new PupCommand(pupClient: $pupClient, logger: $logger));
     $app->setDefaultCommand('pup', isSingleCommand: true);
 } else {
+    // Load config for logger setup; ServeCommand will re-load after optional wizard.
+    $config  = $configInitializer->configExists()
+        ? $configLoader->load()
+        : new \ScottKeckWarren\Kanine\Config\Configuration(
+            host: '127.0.0.1',
+            port: 3737,
+            githubToken: '',
+            repositories: [],
+            readyLabel: 'kanine: ready',
+            logFile: null,
+        );
+
+    $logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
+
+    $logDir = dirname($logFile);
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0755, true);
+    }
+
+    $logger = (new LoggerFactory())->create(logFile: $logFile);
+    $app    = new Application($logger);
+
     $taskQueue   = new TaskQueue();
     $pupRegistry = new PupRegistry();
     $httpServer  = new HttpServer($config->host, $config->port, $taskQueue, $pupRegistry, $logger);
     $supervisor  = new Supervisor($taskQueue, $pupRegistry, $httpServer, $logger);
-    $app->add(new ServeCommand($config, $supervisor, $logger));
+
+    $app->add(new ServeCommand($configInitializer, $configLoader, $supervisor, $logger));
+    $app->add(new InitCommand($configInitializer));
     $app->setDefaultCommand('serve', isSingleCommand: true);
 }
 

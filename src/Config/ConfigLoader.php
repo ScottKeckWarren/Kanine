@@ -6,7 +6,7 @@ namespace ScottKeckWarren\Kanine\Config;
 
 use Symfony\Component\Yaml\Yaml;
 
-final class ConfigLoader
+final class ConfigLoader implements ConfigLoaderInterface
 {
     private const DEFAULT_HOST        = '127.0.0.1';
     private const DEFAULT_PORT        = 3737;
@@ -23,7 +23,7 @@ final class ConfigLoader
     public function __construct(?array $defaultPaths = null)
     {
         $this->defaultPaths = $defaultPaths ?? [
-            getcwd() . '/kanine.yaml',
+            getcwd() . '/.kanine/kanine.yaml',
             ($_SERVER['HOME'] ?? '') . '/.config/kanine/kanine.yaml',
         ];
     }
