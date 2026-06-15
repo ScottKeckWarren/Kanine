@@ -135,6 +135,62 @@ final class LoggerFactoryTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Log format: [YYYY-MM-DD HH:MM:SS] channel.LEVEL: message
+    // -------------------------------------------------------------------------
+
+    public function testLogLineFormatMatchesKanineStandard(): void
+    {
+        $logFile = $this->tempDir . '/kanine.log';
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(logFile: $logFile);
+
+        $logger->info('format check');
+
+        $files = glob($this->tempDir . '/kanine*.log');
+        $this->assertNotEmpty($files);
+
+        $contents = (string) file_get_contents((string) $files[0]);
+        // Must match [YYYY-MM-DD HH:MM:SS] kanine.LEVEL: message
+        $this->assertMatchesRegularExpression(
+            '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] kanine\.\w+: format check$/m',
+            $contents,
+        );
+    }
+
+    public function testLogLineDoesNotContainContextArrayNoise(): void
+    {
+        $logFile = $this->tempDir . '/kanine.log';
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(logFile: $logFile);
+
+        $logger->info('noise check');
+
+        $files = glob($this->tempDir . '/kanine*.log');
+        $this->assertNotEmpty($files);
+
+        $contents = (string) file_get_contents((string) $files[0]);
+        // The default Monolog format appends "[] []" for empty context/extras — must not appear
+        $this->assertStringNotContainsString('[] []', $contents);
+    }
+
+    public function testLogLineDoesNotContainIso8601Timezone(): void
+    {
+        $logFile = $this->tempDir . '/kanine.log';
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(logFile: $logFile);
+
+        $logger->info('tz check');
+
+        $files = glob($this->tempDir . '/kanine*.log');
+        $this->assertNotEmpty($files);
+
+        $contents = (string) file_get_contents((string) $files[0]);
+        // ISO 8601 format has +00:00 or Z suffix — simple format must not
+        $this->assertDoesNotMatchRegularExpression('/\+\d{2}:\d{2}/', $contents);
+        $this->assertStringNotContainsString('+00:00', $contents);
+    }
+
+    // -------------------------------------------------------------------------
     // Channel name
     // -------------------------------------------------------------------------
 

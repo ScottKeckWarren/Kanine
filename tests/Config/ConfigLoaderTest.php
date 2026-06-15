@@ -442,6 +442,155 @@ final class ConfigLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // ConfigLoader: validation — missing GITHUB_TOKEN
+    // -------------------------------------------------------------------------
+
+    public function testLoaderThrowsWhenGithubTokenIsEmpty(): void
+    {
+        $yaml = $this->buildYaml(
+            token: null,
+            tokenEnv: 'KANINE_MISSING_ENV_VAR_XYZ',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'no-token.yaml');
+
+        putenv('KANINE_MISSING_ENV_VAR_XYZ');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/GITHUB_TOKEN/');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    public function testLoaderThrowsWithActionableMessageWhenTokenMissing(): void
+    {
+        $yaml = $this->buildYaml(
+            token: null,
+            tokenEnv: 'KANINE_MISSING_ENV_VAR_XYZ',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'no-token-msg.yaml');
+
+        putenv('KANINE_MISSING_ENV_VAR_XYZ');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/Export it or set token_env/');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    // -------------------------------------------------------------------------
+    // ConfigLoader: validation — no repositories configured
+    // -------------------------------------------------------------------------
+
+    public function testLoaderThrowsWhenNoRepositoriesConfigured(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'some-token',
+            repositories: [],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'no-repos.yaml');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/no repositories/i');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    // -------------------------------------------------------------------------
+    // ConfigLoader: validation — port out of range
+    // -------------------------------------------------------------------------
+
+    public function testLoaderThrowsWhenPortIsZero(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'some-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 0,
+        );
+        $path = $this->writeYaml($yaml, 'port-zero.yaml');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/port/i');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    public function testLoaderThrowsWhenPortExceedsMaximum(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'some-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 65536,
+        );
+        $path = $this->writeYaml($yaml, 'port-max.yaml');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/port/i');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    public function testLoaderThrowsWhenPortIsNegative(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'some-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: -1,
+        );
+        $path = $this->writeYaml($yaml, 'port-negative.yaml');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/port/i');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    public function testLoaderAcceptsValidPortBoundaries(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'some-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 1,
+        );
+        $path = $this->writeYaml($yaml, 'port-min.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(1, $config->port);
+    }
+
+    // -------------------------------------------------------------------------
     // PHPUnit lifecycle
     // -------------------------------------------------------------------------
 
