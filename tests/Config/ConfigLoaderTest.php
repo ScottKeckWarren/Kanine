@@ -489,6 +489,34 @@ final class ConfigLoaderTest extends TestCase
         $loader->load(explicitPath: $path);
     }
 
+    public function testLoaderThrowsWithTokenCreationInstructionsWhenDefaultTokenMissing(): void
+    {
+        $yaml = $this->buildYaml(
+            token: null,
+            tokenEnv: 'GITHUB_TOKEN',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'no-default-token.yaml');
+
+        $saved = getenv('GITHUB_TOKEN');
+        putenv('GITHUB_TOKEN');
+
+        $loader = new ConfigLoader();
+
+        try {
+            $this->expectException(\InvalidArgumentException::class);
+            $this->expectExceptionMessageMatches('/github\.com\/settings\/tokens/');
+            $loader->load(explicitPath: $path);
+        } finally {
+            if ($saved !== false) {
+                putenv("GITHUB_TOKEN={$saved}");
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // ConfigLoader: validation — no repositories configured
     // -------------------------------------------------------------------------
