@@ -31,6 +31,8 @@ final class IssueLoader implements IssueLoaderInterface
         $tasks = [];
 
         foreach ($this->repositories as $repository) {
+            $this->logger->info("Fetching issues from {$repository}");
+
             try {
                 $issues = $this->client->fetchOpenIssues($repository);
             } catch (Throwable $e) {
@@ -39,6 +41,8 @@ final class IssueLoader implements IssueLoaderInterface
             }
 
             foreach ($issues as $issue) {
+                $this->logger->info("Found #{$issue['number']}: {$issue['title']} ({$repository})");
+
                 if (!$this->hasReadyLabel($issue['labels'])) {
                     continue;
                 }
