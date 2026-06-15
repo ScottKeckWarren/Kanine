@@ -18,14 +18,30 @@ final class PupCommand extends Command
     /** @var Closure(string $title, string $body): ClaudeRunner */
     private readonly Closure $runnerFactory;
 
+    /** @var callable(int, callable): void */
+    private readonly mixed $signalInstaller;
+
+    /** @var callable(): void */
+    private readonly mixed $exitCallback;
+
     public function __construct(
         private readonly PupClientInterface $pupClient,
         private readonly LoggerInterface $logger,
         private readonly int $maxPolls = PHP_INT_MAX,
         ?Closure $runnerFactory = null,
+        ?callable $signalInstaller = null,
+        ?callable $exitCallback = null,
     ) {
         $this->runnerFactory = $runnerFactory
             ?? static fn (string $title, string $body): ClaudeRunner => new ClaudeRunner($title, $body);
+        $this->signalInstaller = $signalInstaller ?? static function (int $signal, callable $handler): void {
+            if (function_exists('pcntl_signal')) {
+                pcntl_signal($signal, $handler);
+            }
+        };
+        $this->exitCallback = $exitCallback ?? static function (): never {
+            exit(0);
+        };
         parent::__construct('pup');
     }
 
@@ -56,6 +72,16 @@ final class PupCommand extends Command
         $pollCount          = 0;
         $runner             = null;
         $currentIssueNumber = null;
+
+        $shutdownHandler = function () use (&$runner): void {
+            if ($runner !== null && $runner->isRunning()) {
+                $runner->stop();
+            }
+            $this->logger->info('Pup shutting down, claude process terminated');
+            ($this->exitCallback)();
+        };
+        ($this->signalInstaller)(SIGINT, $shutdownHandler);
+        ($this->signalInstaller)(SIGTERM, $shutdownHandler);
 
         while ($pollCount < $this->maxPolls) {
             if ($runner !== null && !$runner->isRunning()) {

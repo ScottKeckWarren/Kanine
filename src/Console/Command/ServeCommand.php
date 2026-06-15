@@ -49,10 +49,12 @@ final class ServeCommand extends Command
 
         $config = $this->configLoader->load();
 
-        $noop = static function (): void {
+        $shutdownHandler = function (): void {
+            $this->logger->info('Supervisor shutting down');
+            $this->supervisor->stop();
         };
-        ($this->signalInstaller)(SIGINT, $noop);
-        ($this->signalInstaller)(SIGTERM, $noop);
+        ($this->signalInstaller)(SIGINT, $shutdownHandler);
+        ($this->signalInstaller)(SIGTERM, $shutdownHandler);
 
         $this->logger->info(sprintf(
             'Starting kanine serve on %s:%d',

@@ -135,6 +135,67 @@ final class ServeCommandTest extends TestCase
         $this->assertContains(SIGTERM, $registeredSignals);
     }
 
+    public function testSignalHandlerLogsShutdownMessage(): void
+    {
+        $capturedHandler = null;
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$capturedHandler): void {
+            if ($capturedHandler === null) {
+                $capturedHandler = $handler;
+            }
+        };
+
+        $infoMessages = [];
+        $logger       = $this->createMock(LoggerInterface::class);
+        $logger->method('info')
+            ->willReturnCallback(function (string $message) use (&$infoMessages): void {
+                $infoMessages[] = $message;
+            });
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $logger,
+            signalInstaller: $signalInstaller,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertNotNull($capturedHandler);
+        ($capturedHandler)(SIGINT, null);
+
+        $found = array_filter($infoMessages, fn (string $m): bool => str_contains($m, 'Supervisor shutting down'));
+        $this->assertNotEmpty($found, 'Expected log message containing "Supervisor shutting down"');
+    }
+
+    public function testSignalHandlerCallsSupervisorStop(): void
+    {
+        $capturedHandler = null;
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$capturedHandler): void {
+            if ($capturedHandler === null) {
+                $capturedHandler = $handler;
+            }
+        };
+
+        $supervisor = $this->createMock(SupervisorInterface::class);
+        $supervisor->expects($this->once())->method('stop');
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $supervisor,
+            logger: $this->createMock(LoggerInterface::class),
+            signalInstaller: $signalInstaller,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertNotNull($capturedHandler);
+        ($capturedHandler)(SIGINT, null);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

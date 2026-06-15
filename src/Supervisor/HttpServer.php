@@ -48,6 +48,14 @@ final class HttpServer implements HttpServerInterface
         $loop->run();
     }
 
+    /**
+     * @codeCoverageIgnore interacts with ReactPHP global loop, cannot be unit-tested
+     */
+    public function stop(): void
+    {
+        Loop::get()->stop();
+    }
+
     public function handle(ServerRequestInterface $request): Response
     {
         $method = $request->getMethod();

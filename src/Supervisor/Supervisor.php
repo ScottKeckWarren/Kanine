@@ -18,6 +18,11 @@ final class Supervisor implements SupervisorInterface
     ) {
     }
 
+    public function stop(): void
+    {
+        $this->httpServer->stop();
+    }
+
     public function boot(): void
     {
         $this->logger->info('Supervisor booting on ' . $this->httpServer->boundAddress());
