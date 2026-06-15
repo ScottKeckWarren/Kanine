@@ -196,6 +196,32 @@ final class ServeCommandTest extends TestCase
         ($capturedHandler)(SIGINT, null);
     }
 
+    public function testServeCommandLogsAndOutputsErrorWhenConfigLoaderThrows(): void
+    {
+        $loader = $this->createMock(ConfigLoaderInterface::class);
+        $loader->method('load')->willThrowException(
+            new \InvalidArgumentException('ERROR: GITHUB_TOKEN env var not set.')
+        );
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('GITHUB_TOKEN'));
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(true),
+            configLoader: $loader,
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $logger,
+        );
+
+        $tester = new CommandTester($command);
+        $exitCode = $tester->execute([]);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertStringContainsString('GITHUB_TOKEN', $tester->getDisplay());
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
