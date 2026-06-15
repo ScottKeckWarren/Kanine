@@ -79,14 +79,42 @@ final class ConfigLoader implements ConfigLoaderInterface
             (array) ($github['repositories'] ?? [])
         ));
 
-        return new Configuration(
+        $port = (int) ($supervisor['port'] ?? self::DEFAULT_PORT);
+
+        $config = new Configuration(
             host: (string) ($supervisor['host'] ?? self::DEFAULT_HOST),
-            port: (int) ($supervisor['port'] ?? self::DEFAULT_PORT),
+            port: $port,
             githubToken: $token,
             repositories: $repositories,
             readyLabel: (string) ($github['ready_label'] ?? self::DEFAULT_READY_LABEL),
             logFile: isset($data['log_file']) ? (string) $data['log_file'] : null,
         );
+
+        $this->validate($config, $tokenEnv);
+
+        return $config;
+    }
+
+    private function validate(Configuration $config, string $tokenEnv): void
+    {
+        if ($config->githubToken === '') {
+            throw new \InvalidArgumentException(
+                "ERROR: GITHUB_TOKEN env var not set. Export it or set token_env in kanine.yaml."
+                . " (token_env resolved to: {$tokenEnv})"
+            );
+        }
+
+        if ($config->repositories === []) {
+            throw new \InvalidArgumentException(
+                'ERROR: No repositories configured. Add at least one entry under github.repositories in kanine.yaml.'
+            );
+        }
+
+        if ($config->port < 1 || $config->port > 65535) {
+            throw new \InvalidArgumentException(
+                "ERROR: Invalid port {$config->port}. Port must be in range 1–65535."
+            );
+        }
     }
 
     private function buildDefaults(): Configuration
