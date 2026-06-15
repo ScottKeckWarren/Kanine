@@ -7,6 +7,8 @@ namespace ScottKeckWarren\Kanine\Console\Command;
 use Psr\Log\LoggerInterface;
 use ScottKeckWarren\Kanine\Config\ConfigInitializerInterface;
 use ScottKeckWarren\Kanine\Config\ConfigLoaderInterface;
+use ScottKeckWarren\Kanine\Config\Configuration;
+use ScottKeckWarren\Kanine\GitHub\IssueLoaderInterface;
 use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -17,8 +19,12 @@ final class ServeCommand extends Command
     /** @var callable(int, callable): void */
     private readonly mixed $signalInstaller;
 
+    /** @var (callable(Configuration, LoggerInterface): IssueLoaderInterface)|null */
+    private readonly mixed $issueLoaderFactory;
+
     /**
      * @param (callable(int, callable): void)|null $signalInstaller
+     * @param (callable(Configuration, LoggerInterface): IssueLoaderInterface)|null $issueLoaderFactory
      */
     public function __construct(
         private readonly ConfigInitializerInterface $configInitializer,
@@ -26,13 +32,15 @@ final class ServeCommand extends Command
         private readonly SupervisorInterface $supervisor,
         private readonly LoggerInterface $logger,
         ?callable $signalInstaller = null,
+        ?callable $issueLoaderFactory = null,
     ) {
         parent::__construct('serve');
-        $this->signalInstaller = $signalInstaller ?? static function (int $signal, callable $handler): void {
+        $this->signalInstaller    = $signalInstaller ?? static function (int $signal, callable $handler): void {
             if (function_exists('pcntl_signal')) {
                 pcntl_signal($signal, $handler);
             }
         };
+        $this->issueLoaderFactory = $issueLoaderFactory;
     }
 
     protected function configure(): void
@@ -54,6 +62,10 @@ final class ServeCommand extends Command
             $output->writeln('<error>' . $e->getMessage() . '</error>');
 
             return Command::FAILURE;
+        }
+
+        if ($this->issueLoaderFactory !== null) {
+            $this->supervisor->setIssueLoader(($this->issueLoaderFactory)($config, $this->logger));
         }
 
         $shutdownHandler = function (): void {

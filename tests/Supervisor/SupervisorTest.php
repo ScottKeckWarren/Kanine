@@ -258,4 +258,36 @@ final class SupervisorTest extends TestCase
 
         $this->assertNull($queue->peek());
     }
+
+    public function testSetIssueLoaderIsUsedOnBoot(): void
+    {
+        $task = new Task(
+            id: 'owner/repo#99',
+            issueNumber: 99,
+            repo: 'owner/repo',
+            title: 'Late-injected issue',
+            body: '',
+            state: TaskState::Queued,
+        );
+
+        $loader = $this->createMock(IssueLoaderInterface::class);
+        $loader->method('load')->willReturn([$task]);
+
+        $queue    = new TaskQueue();
+        $registry = new PupRegistry();
+        $server   = $this->createMock(HttpServerInterface::class);
+        $logger   = $this->createMock(LoggerInterface::class);
+
+        $supervisor = new Supervisor(
+            taskQueue: $queue,
+            pupRegistry: $registry,
+            httpServer: $server,
+            logger: $logger,
+        );
+
+        $supervisor->setIssueLoader($loader);
+        $supervisor->boot();
+
+        $this->assertSame($task, $queue->peek());
+    }
 }

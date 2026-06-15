@@ -10,6 +10,7 @@ use ScottKeckWarren\Kanine\Config\ConfigInitializerInterface;
 use ScottKeckWarren\Kanine\Config\ConfigLoaderInterface;
 use ScottKeckWarren\Kanine\Config\Configuration;
 use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
+use ScottKeckWarren\Kanine\GitHub\IssueLoaderInterface;
 use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -220,6 +221,33 @@ final class ServeCommandTest extends TestCase
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('GITHUB_TOKEN', $tester->getDisplay());
+    }
+
+    public function testServeCommandInjectsIssueLoaderIntoSupervisorBeforeBoot(): void
+    {
+        $capturedLoader = null;
+
+        $supervisor = $this->createMock(SupervisorInterface::class);
+        $supervisor->expects($this->once())
+            ->method('setIssueLoader')
+            ->willReturnCallback(function (IssueLoaderInterface $loader) use (&$capturedLoader): void {
+                $capturedLoader = $loader;
+            });
+
+        $issueLoader = $this->createMock(IssueLoaderInterface::class);
+        $factory     = fn (Configuration $config, LoggerInterface $logger): IssueLoaderInterface => $issueLoader;
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $supervisor,
+            logger: $this->createMock(LoggerInterface::class),
+            issueLoaderFactory: $factory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertSame($issueLoader, $capturedLoader);
     }
 
     // -------------------------------------------------------------------------
