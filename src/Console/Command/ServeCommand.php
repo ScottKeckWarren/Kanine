@@ -47,7 +47,14 @@ final class ServeCommand extends Command
             $this->configInitializer->run($input, $output);
         }
 
-        $config = $this->configLoader->load();
+        try {
+            $config = $this->configLoader->load();
+        } catch (\InvalidArgumentException $e) {
+            $this->logger->error($e->getMessage());
+            $output->writeln('<error>' . $e->getMessage() . '</error>');
+
+            return Command::FAILURE;
+        }
 
         $shutdownHandler = function (): void {
             $this->logger->info('Supervisor shutting down');
