@@ -329,4 +329,71 @@ final class IssueLoaderTest extends TestCase
         $this->assertCount(1, $tasks);
         $this->assertSame('owner/good-repo', $tasks[0]->repo);
     }
+
+    public function testItLogsInfoBeforeFetchingFromEachRepo(): void
+    {
+        $infoMessages = [];
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('info')
+            ->willReturnCallback(function (string $message) use (&$infoMessages): void {
+                $infoMessages[] = $message;
+            });
+
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')->willReturn([]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo-a', 'owner/repo-b'],
+            readyLabel: 'kanine: ready',
+            logger: $logger,
+        );
+
+        $loader->load();
+
+        $matched = array_filter(
+            $infoMessages,
+            fn (string $m): bool => str_contains($m, 'owner/repo-a'),
+        );
+        $this->assertNotEmpty($matched, 'Expected info log containing "owner/repo-a"');
+
+        $matched = array_filter(
+            $infoMessages,
+            fn (string $m): bool => str_contains($m, 'owner/repo-b'),
+        );
+        $this->assertNotEmpty($matched, 'Expected info log containing "owner/repo-b"');
+    }
+
+    public function testItLogsEachIssuePulledRegardlessOfLabel(): void
+    {
+        $infoMessages = [];
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('info')
+            ->willReturnCallback(function (string $message) use (&$infoMessages): void {
+                $infoMessages[] = $message;
+            });
+
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')->willReturn([
+            ['number' => 10, 'title' => 'Ready issue', 'body' => '', 'labels' => [['name' => 'kanine: ready']]],
+            ['number' => 11, 'title' => 'Not ready', 'body' => '', 'labels' => []],
+        ]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $logger,
+        );
+
+        $loader->load();
+
+        $issue10 = array_filter($infoMessages, fn (string $m): bool => str_contains($m, '#10'));
+        $this->assertNotEmpty($issue10, 'Expected info log for issue #10');
+
+        $issue11 = array_filter($infoMessages, fn (string $m): bool => str_contains($m, '#11'));
+        $this->assertNotEmpty($issue11, 'Expected info log for issue #11');
+    }
 }
