@@ -6,6 +6,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": ".claude/support-scripts/hooks/normalize-script-paths.sh"
+          },
+          {
+            "type": "command",
             "command": ".claude/support-scripts/hooks/guard-raw-commands.sh"
           }
         ]

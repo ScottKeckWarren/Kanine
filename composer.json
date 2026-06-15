@@ -33,7 +33,11 @@
         "bin/kanine"
     ],
     "scripts": {
-        "test": "./vendor/bin/phpunit",
+        "test": [
+            "./vendor/bin/phpunit",
+            "./tests/hooks/normalize-script-paths-test.sh"
+        ],
+        "test-hooks": "./tests/hooks/normalize-script-paths-test.sh",
         "lint": "./vendor/bin/phpcs"
     },
     "config": {
