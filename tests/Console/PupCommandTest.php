@@ -520,8 +520,162 @@ final class PupCommandTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Graceful shutdown — signal handling
+    // -------------------------------------------------------------------------
+
+    public function testPupRegistersSigintAndSigtermHandlers(): void
+    {
+        $registeredSignals = [];
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$registeredSignals): void {
+            $registeredSignals[] = $signal;
+        };
+
+        $client = $this->makeSinglePollClient();
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 1,
+            signalInstaller: $signalInstaller,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertContains(SIGINT, $registeredSignals);
+        $this->assertContains(SIGTERM, $registeredSignals);
+    }
+
+    public function testSignalHandlerStopsRunnerIfRunning(): void
+    {
+        $capturedHandler = null;
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$capturedHandler): void {
+            if ($capturedHandler === null) {
+                $capturedHandler = $handler;
+            }
+        };
+
+        $task = [
+            'id' => 'org/repo#1', 'issue_number' => 1, 'repo' => 'org/repo',
+            'title' => 'T', 'body' => 'B', 'state' => 'queued',
+        ];
+
+        $client = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturn(['new_task' => $task]);
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(true);
+        $stubProcess->expects($this->once())->method('stop');
+
+        $factory = fn (string $t, string $b): ClaudeRunner => new ClaudeRunner($t, $b, $stubProcess);
+
+        $exitCalled   = false;
+        $exitCallback = function () use (&$exitCalled): void {
+            $exitCalled = true;
+        };
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 1,
+            runnerFactory: $factory,
+            signalInstaller: $signalInstaller,
+            exitCallback: $exitCallback,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertNotNull($capturedHandler);
+        ($capturedHandler)(SIGINT, null);
+
+        $this->assertTrue($exitCalled);
+    }
+
+    public function testSignalHandlerLogsShutdownMessage(): void
+    {
+        $capturedHandler = null;
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$capturedHandler): void {
+            if ($capturedHandler === null) {
+                $capturedHandler = $handler;
+            }
+        };
+
+        $infoMessages = [];
+        $logger       = $this->createMock(LoggerInterface::class);
+        $logger->method('info')
+            ->willReturnCallback(function (string $message) use (&$infoMessages): void {
+                $infoMessages[] = $message;
+            });
+
+        $client       = $this->makeSinglePollClient();
+        $exitCallback = static function (): void {
+        };
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $logger,
+            maxPolls: 1,
+            signalInstaller: $signalInstaller,
+            exitCallback: $exitCallback,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertNotNull($capturedHandler);
+        ($capturedHandler)(SIGINT, null);
+
+        $found = array_filter(
+            $infoMessages,
+            fn (string $m): bool => str_contains($m, 'Pup shutting down'),
+        );
+        $this->assertNotEmpty($found, 'Expected log message containing "Pup shutting down"');
+    }
+
+    public function testSignalHandlerInvokesExitCallback(): void
+    {
+        $capturedHandler = null;
+
+        $signalInstaller = function (int $signal, callable $handler) use (&$capturedHandler): void {
+            if ($capturedHandler === null) {
+                $capturedHandler = $handler;
+            }
+        };
+
+        $exitCalled   = false;
+        $exitCallback = function () use (&$exitCalled): void {
+            $exitCalled = true;
+        };
+
+        $command = new PupCommand(
+            pupClient: $this->makeSinglePollClient(),
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 1,
+            signalInstaller: $signalInstaller,
+            exitCallback: $exitCallback,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertNotNull($capturedHandler);
+        ($capturedHandler)(SIGINT, null);
+
+        $this->assertTrue($exitCalled);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private function makeSinglePollClient(): PupClientInterface
+    {
+        $client = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturn(['new_task' => null]);
+        return $client;
+    }
 
     /**
      * @param list<string> $messages

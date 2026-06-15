@@ -7,4 +7,6 @@ namespace ScottKeckWarren\Kanine\Supervisor;
 interface SupervisorInterface
 {
     public function boot(): void;
+
+    public function stop(): void;
 }

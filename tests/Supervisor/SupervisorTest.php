@@ -219,6 +219,25 @@ final class SupervisorTest extends TestCase
         $supervisor->boot();
     }
 
+    public function testStopDelegatesToHttpServerStop(): void
+    {
+        $logger   = $this->createMock(LoggerInterface::class);
+        $queue    = new TaskQueue();
+        $registry = new PupRegistry();
+        $server   = $this->createMock(HttpServerInterface::class);
+
+        $server->expects($this->once())->method('stop');
+
+        $supervisor = new Supervisor(
+            taskQueue: $queue,
+            pupRegistry: $registry,
+            httpServer: $server,
+            logger: $logger,
+        );
+
+        $supervisor->stop();
+    }
+
     public function testBootWorksWithoutIssueLoader(): void
     {
         $logger   = $this->createMock(LoggerInterface::class);
