@@ -5,7 +5,7 @@ set -euo pipefail
 # Blocks raw `git`, `gh`, and `phpunit --filter` commands; directs to support scripts.
 
 input=$(cat)
-command_str=$(echo "$input" | python3 -c "import sys, json; print(json.load(sys.stdin).get('command', ''))" 2>/dev/null || true)
+command_str=$(echo "$input" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('tool_input', {}).get('command', '') or d.get('command', ''))" 2>/dev/null || true)
 leading_token=$(echo "$command_str" | awk '{print $1}')
 
 # Block raw phpunit --filter calls

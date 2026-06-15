@@ -62,6 +62,29 @@ Or with a custom config file:
 
 ---
 
+## Setup
+
+On first run, Kanine guides you through an interactive wizard that creates `.kanine/kanine.yaml`.
+
+### Run the wizard explicitly
+
+```bash
+kanine init
+```
+
+The wizard asks:
+
+1. Which environment variable holds your GitHub token (default: `GITHUB_TOKEN`)
+2. One or more repositories in `owner/repo` format (press Enter on a blank line to finish)
+
+It then writes `.kanine/kanine.yaml` with your answers and commented-out optional settings.
+
+### Implicit wizard in `kanine serve`
+
+If `.kanine/kanine.yaml` does not exist when you run `kanine serve`, the wizard runs automatically before the server starts. Once the file is written, the server boots normally.
+
+---
+
 ## Configuration
 
 Kanine resolves config in this order (first found wins):

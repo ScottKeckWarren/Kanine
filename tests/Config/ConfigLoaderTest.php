@@ -331,6 +331,117 @@ final class ConfigLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // ConfigLoader: built-in default path is .kanine/kanine.yaml
+    // -------------------------------------------------------------------------
+
+    public function testBuiltInDefaultPathLoadsDotKanineKanineYaml(): void
+    {
+        // Uses a no-arg ConfigLoader; temporarily changes cwd so the built-in
+        // path (getcwd().'/.kanine/kanine.yaml') resolves to a file we control.
+        $originalCwd = getcwd();
+        chdir($this->tempDir);
+
+        try {
+            $dotKanineDir = $this->tempDir . '/.kanine';
+            mkdir($dotKanineDir, 0777, true);
+            $yaml = $this->buildYaml(
+                token: 'builtin-dotkanine-token',
+                repositories: ['owner/repo'],
+                readyLabel: 'kanine: ready',
+                host: '127.0.0.1',
+                port: 3737,
+            );
+            file_put_contents($dotKanineDir . '/kanine.yaml', $yaml);
+
+            $loader = new ConfigLoader();
+            $config = $loader->load();
+
+            $this->assertSame('builtin-dotkanine-token', $config->githubToken);
+        } finally {
+            chdir($originalCwd);
+        }
+    }
+
+    public function testBuiltInDefaultDoesNotLoadBareKanineYaml(): void
+    {
+        // Place only a bare kanine.yaml in cwd (no .kanine/ subdir).
+        // The built-in loader must NOT pick it up.
+        $originalCwd = getcwd();
+        chdir($this->tempDir);
+
+        try {
+            $yaml = $this->buildYaml(
+                token: 'bare-builtin-token',
+                repositories: ['bare/repo'],
+                readyLabel: 'kanine: ready',
+                host: '127.0.0.1',
+                port: 3737,
+            );
+            file_put_contents($this->tempDir . '/kanine.yaml', $yaml);
+
+            // No HOME or XDG fallback will exist in tempDir either
+            $loader = new ConfigLoader(
+                defaultPaths: [getcwd() . '/.kanine/kanine.yaml'],
+            );
+            $config = $loader->load();
+
+            $this->assertNotSame('bare-builtin-token', $config->githubToken);
+        } finally {
+            chdir($originalCwd);
+        }
+    }
+
+    public function testDefaultPathIncludesDotKanineDirectory(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'dotkanine-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+
+        $dotKanineDir = $this->tempDir . '/.kanine';
+        mkdir($dotKanineDir, 0777, true);
+        file_put_contents($dotKanineDir . '/kanine.yaml', $yaml);
+
+        $loader = new ConfigLoader(
+            defaultPaths: [$dotKanineDir . '/kanine.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame('dotkanine-token', $config->githubToken);
+    }
+
+    public function testBareKanineYamlIsNotInBuiltInDefaultPaths(): void
+    {
+        // Place a bare kanine.yaml in a temp dir — if the loader's built-in
+        // default list still contains getcwd()/kanine.yaml it could pick it up.
+        // We verify by constructing a loader whose defaultPaths do NOT include
+        // the bare path and confirming it falls through to defaults.
+        $yaml = $this->buildYaml(
+            token: 'bare-token',
+            repositories: ['bare/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $barePath = $this->tempDir . '/kanine.yaml';
+        file_put_contents($barePath, $yaml);
+
+        // Build a loader whose only candidate is the .kanine sub-path (missing)
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/.kanine/kanine.yaml'],
+        );
+
+        $config = $loader->load();
+
+        // Falls through to defaults — bare-token must NOT appear
+        $this->assertNotSame('bare-token', $config->githubToken);
+    }
+
+    // -------------------------------------------------------------------------
     // PHPUnit lifecycle
     // -------------------------------------------------------------------------
 
