@@ -200,6 +200,17 @@ final class SmokeTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Third-party dependency availability
+    // -------------------------------------------------------------------------
+
+    public function testGitHubApiClientCanBeInstantiated(): void
+    {
+        $client = new \Github\Client();
+
+        $this->assertInstanceOf(\Github\Client::class, $client);
+    }
+
+    // -------------------------------------------------------------------------
     // PHPUnit lifecycle
     // -------------------------------------------------------------------------
 
