@@ -12,6 +12,9 @@ final class TaskQueue
     /** @var array<string, Task> Keyed by task id, insertion order preserved */
     private array $tasks = [];
 
+    /** @var array<string, string> Maps task ID to pup ID */
+    private array $assigned = [];
+
     public function enqueue(Task $task): void
     {
         $this->tasks[$task->id] = $task;
@@ -60,6 +63,43 @@ final class TaskQueue
         }
 
         $this->tasks[$taskId] = $this->withState($this->tasks[$taskId], TaskState::Queued);
+    }
+
+    public function assignTo(string $taskId, string $pupId): void
+    {
+        $this->assigned[$taskId] = $pupId;
+    }
+
+    public function getAssignedPupId(string $taskId): ?string
+    {
+        return $this->assigned[$taskId] ?? null;
+    }
+
+    public function unassignTask(string $taskId): void
+    {
+        unset($this->assigned[$taskId]);
+    }
+
+    public function complete(string $taskId): void
+    {
+        if (!isset($this->tasks[$taskId])) {
+            throw new \InvalidArgumentException(
+                "Task not found in queue: {$taskId}"
+            );
+        }
+
+        $this->tasks[$taskId] = $this->withState($this->tasks[$taskId], TaskState::Complete);
+    }
+
+    public function fail(string $taskId): void
+    {
+        if (!isset($this->tasks[$taskId])) {
+            throw new \InvalidArgumentException(
+                "Task not found in queue: {$taskId}"
+            );
+        }
+
+        $this->tasks[$taskId] = $this->withState($this->tasks[$taskId], TaskState::Failed);
     }
 
     public function find(string $taskId): ?Task
