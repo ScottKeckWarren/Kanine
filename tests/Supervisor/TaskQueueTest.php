@@ -202,6 +202,26 @@ final class TaskQueueTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testAssignPreservesLabels(): void
+    {
+        $queue = new TaskQueue();
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 1,
+            repo: 'org/repo',
+            title: 'Task 1',
+            body: '',
+            labels: ['bug', 'kanine: ready'],
+            state: TaskState::Queued,
+        );
+        $queue->enqueue($task);
+
+        $queue->assign('task-1');
+
+        $found = $queue->find('task-1');
+        $this->assertSame(['bug', 'kanine: ready'], $found?->labels);
+    }
+
     private function makeTask(string $id, TaskState $state = TaskState::Queued): Task
     {
         return new Task(
@@ -210,6 +230,7 @@ final class TaskQueueTest extends TestCase
             repo: 'org/repo',
             title: 'Task ' . $id,
             body: '',
+            labels: [],
             state: $state,
         );
     }

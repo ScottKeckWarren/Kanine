@@ -149,6 +149,7 @@ final class HttpServer implements HttpServerInterface
                     'repo'         => $task->repo,
                     'title'        => $task->title,
                     'body'         => $task->body,
+                    'labels'       => $task->labels,
                     'state'        => $task->state->value,
                 ];
             }

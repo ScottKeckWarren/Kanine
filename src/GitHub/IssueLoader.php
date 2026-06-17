@@ -53,6 +53,10 @@ final class IssueLoader implements IssueLoaderInterface
                     repo: $repository,
                     title: $issue['title'],
                     body: $issue['body'],
+                    labels: array_map(
+                        static fn (array $label): string => $label['name'],
+                        $issue['labels'],
+                    ),
                     state: TaskState::Queued,
                 );
             }

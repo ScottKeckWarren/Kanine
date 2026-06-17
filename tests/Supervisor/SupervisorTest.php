@@ -109,6 +109,7 @@ final class SupervisorTest extends TestCase
             repo: 'owner/repo',
             title: 'Fix the thing',
             body: 'Details',
+            labels: [],
             state: TaskState::Queued,
         );
 
@@ -140,6 +141,7 @@ final class SupervisorTest extends TestCase
             repo: 'owner/repo',
             title: 'My issue',
             body: 'Body',
+            labels: [],
             state: TaskState::Queued,
         );
 
@@ -267,6 +269,7 @@ final class SupervisorTest extends TestCase
             repo: 'owner/repo',
             title: 'Late-injected issue',
             body: '',
+            labels: [],
             state: TaskState::Queued,
         );
 
