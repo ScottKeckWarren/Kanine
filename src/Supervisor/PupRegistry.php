@@ -60,6 +60,17 @@ final class PupRegistry
         );
     }
 
+    public function findByAssignedTask(string $taskId): ?Pup
+    {
+        foreach ($this->pups as $pup) {
+            if ($pup->assignedTaskId === $taskId) {
+                return $pup;
+            }
+        }
+
+        return null;
+    }
+
     public function assign(string $pupId, string $taskId): void
     {
         $existing = $this->find($pupId);

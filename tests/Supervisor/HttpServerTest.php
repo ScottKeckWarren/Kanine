@@ -247,6 +247,150 @@ final class HttpServerTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // POST /tasks/{id}/status
+    // -------------------------------------------------------------------------
+
+    public function testStatusEndpointLogsMessage(): void
+    {
+        $messages = [];
+        $logger   = $this->createMock(LoggerInterface::class);
+        $logger->method('info')->willReturnCallback(function (string $msg) use (&$messages): void {
+            $messages[] = $msg;
+        });
+
+        $registry = new PupRegistry();
+        $token    = $registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $server = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: new TaskQueue(),
+            pupRegistry: $registry,
+            logger: $logger,
+        );
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"pup_id":"pup-1","message":"working on it"}',
+            "Bearer {$token}",
+        );
+        $server->handle($request);
+
+        $this->assertContains('Status from pup pup-1 on task task-1: working on it', $messages);
+    }
+
+    public function testStatusEndpointReturns422ForMissingMessage(): void
+    {
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"pup_id":"pup-1"}',
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointReturns422ForMissingPupId(): void
+    {
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"message":"working on it"}',
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointReturns400ForInvalidJson(): void
+    {
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{not valid json',
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointReturns401ForMissingToken(): void
+    {
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"pup_id":"pup-1","message":"working on it"}',
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(401, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointReturns403ForWrongPup(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $this->registry->register(pupId: 'pup-2', hostname: 'host-2');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"pup_id":"pup-2","message":"working on it"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(403, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointReturns404ForUnknownTask(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/nonexistent-task/status',
+            '{"pup_id":"pup-1","message":"working on it"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointReturns204ForValidRequest(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 42,
+            repo: 'org/repo',
+            title: 'Fix bug',
+            body: 'details',
+            labels: [],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"pup_id":"pup-1","message":"working on it"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(204, $response->getStatusCode());
+    }
+
+    // -------------------------------------------------------------------------
     // POST /tasks/{id}/complete
     // -------------------------------------------------------------------------
 
