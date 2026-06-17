@@ -106,6 +106,7 @@ final class HttpServerTest extends TestCase
             repo: 'org/repo',
             title: 'Fix bug',
             body: 'details',
+            labels: [],
             state: TaskState::Queued,
         );
         $this->queue->enqueue($task);
@@ -117,6 +118,49 @@ final class HttpServerTest extends TestCase
         $body = json_decode((string) $response->getBody(), true);
         $this->assertNotNull($body['new_task']);
         $this->assertSame('task-1', $body['new_task']['id']);
+    }
+
+    public function testPollResponseIncludesLabels(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 42,
+            repo: 'org/repo',
+            title: 'Fix bug',
+            body: 'details',
+            labels: ['bug', 'kanine: ready'],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+
+        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertIsArray($body['new_task']['labels']);
+        $this->assertSame(['bug', 'kanine: ready'], $body['new_task']['labels']);
+    }
+
+    public function testPollResponseDoesNotIncludePrompt(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 42,
+            repo: 'org/repo',
+            title: 'Fix bug',
+            body: 'details',
+            labels: [],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+
+        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertArrayNotHasKey('prompt', $body['new_task']);
     }
 
     public function testHandleUnknownRouteReturns404(): void

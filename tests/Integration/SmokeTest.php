@@ -147,6 +147,7 @@ final class SmokeTest extends TestCase
             repo: 'owner/smoke-repo',
             title: 'Smoke issue',
             body: 'Smoke body',
+            labels: [],
             state: TaskState::Queued,
         );
 
@@ -185,6 +186,7 @@ final class SmokeTest extends TestCase
             repo: 'owner/repo',
             title: 'Assign smoke',
             body: 'body',
+            labels: [],
             state: TaskState::Queued,
         );
         $queue->enqueue($task);

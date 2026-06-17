@@ -245,6 +245,64 @@ final class IssueLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Labels
+    // -------------------------------------------------------------------------
+
+    public function testLabelsPopulatedFromGitHubResponse(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willReturn([
+                [
+                    'number' => 42,
+                    'title'  => 'Fix the thing',
+                    'body'   => 'Details',
+                    'labels' => [['name' => 'kanine: ready'], ['name' => 'bug']],
+                ],
+            ]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tasks = $loader->load();
+
+        $this->assertSame(['kanine: ready', 'bug'], $tasks[0]->labels);
+    }
+
+    public function testLabelsPreserveOrder(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willReturn([
+                [
+                    'number' => 1,
+                    'title'  => 'Issue',
+                    'body'   => '',
+                    'labels' => [
+                        ['name' => 'alpha'],
+                        ['name' => 'kanine: ready'],
+                        ['name' => 'zeta'],
+                    ],
+                ],
+            ]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tasks = $loader->load();
+
+        $this->assertSame(['alpha', 'kanine: ready', 'zeta'], $tasks[0]->labels);
+    }
+
+    // -------------------------------------------------------------------------
     // Error handling: GitHub API exceptions
     // -------------------------------------------------------------------------
 

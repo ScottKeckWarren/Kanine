@@ -75,6 +75,7 @@ final class TaskQueue
             repo: $task->repo,
             title: $task->title,
             body: $task->body,
+            labels: $task->labels,
             state: $state,
         );
     }
