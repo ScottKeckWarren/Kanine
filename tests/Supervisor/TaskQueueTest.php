@@ -222,6 +222,89 @@ final class TaskQueueTest extends TestCase
         $this->assertSame(['bug', 'kanine: ready'], $found?->labels);
     }
 
+    public function testCompleteTransitionsState(): void
+    {
+        $queue = new TaskQueue();
+        $queue->enqueue($this->makeTask('task-1'));
+
+        $queue->complete('task-1');
+
+        $task = $queue->find('task-1');
+        $this->assertSame(TaskState::Complete, $task?->state);
+    }
+
+    public function testFailTransitionsState(): void
+    {
+        $queue = new TaskQueue();
+        $queue->enqueue($this->makeTask('task-1'));
+
+        $queue->fail('task-1');
+
+        $task = $queue->find('task-1');
+        $this->assertSame(TaskState::Failed, $task?->state);
+    }
+
+    public function testCompleteUnknownTaskThrows(): void
+    {
+        $queue = new TaskQueue();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/task-missing/');
+
+        $queue->complete('task-missing');
+    }
+
+    public function testFailUnknownTaskThrows(): void
+    {
+        $queue = new TaskQueue();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/task-missing/');
+
+        $queue->fail('task-missing');
+    }
+
+    public function testAssignToRecordsPupId(): void
+    {
+        $queue = new TaskQueue();
+        $queue->enqueue($this->makeTask('task-1'));
+
+        $queue->assignTo('task-1', 'pup-42');
+
+        $this->assertSame('pup-42', $queue->getAssignedPupId('task-1'));
+    }
+
+    public function testUnassignTaskClearsPupId(): void
+    {
+        $queue = new TaskQueue();
+        $queue->enqueue($this->makeTask('task-1'));
+        $queue->assignTo('task-1', 'pup-42');
+
+        $queue->unassignTask('task-1');
+
+        $this->assertNull($queue->getAssignedPupId('task-1'));
+    }
+
+    public function testWithStatePreservesLabels(): void
+    {
+        $queue = new TaskQueue();
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 1,
+            repo: 'org/repo',
+            title: 'Task 1',
+            body: '',
+            labels: ['bug', 'kanine: ready'],
+            state: TaskState::Queued,
+        );
+        $queue->enqueue($task);
+
+        $queue->complete('task-1');
+
+        $found = $queue->find('task-1');
+        $this->assertSame(['bug', 'kanine: ready'], $found?->labels);
+    }
+
     private function makeTask(string $id, TaskState $state = TaskState::Queued): Task
     {
         return new Task(
