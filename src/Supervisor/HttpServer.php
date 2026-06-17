@@ -23,6 +23,8 @@ final class HttpServer implements HttpServerInterface
         private readonly TaskQueue $taskQueue,
         private readonly PupRegistry $pupRegistry,
         private readonly LoggerInterface $logger,
+        private readonly int $statusIntervalMs = 10000,
+        private readonly int $maxThrottlePollMs = 60000,
     ) {
         $this->address = "{$host}:{$port}";
     }
@@ -103,8 +105,10 @@ final class HttpServer implements HttpServerInterface
         $this->logger->info("Registered pup {$pupId} from {$hostname}");
 
         return $this->jsonResponse(200, [
-            'token'           => $token,
-            'poll_interval_ms' => 5000,
+            'token'               => $token,
+            'poll_interval_ms'    => 5000,
+            'status_interval_ms'  => $this->statusIntervalMs,
+            'max_throttle_poll_ms' => $this->maxThrottlePollMs,
         ]);
     }
 

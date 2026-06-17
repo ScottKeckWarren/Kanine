@@ -619,6 +619,104 @@ final class ConfigLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // ConfigLoader: new V0.2 fields — defaults
+    // -------------------------------------------------------------------------
+
+    public function testDefaultsAppliedWhenAgentKeyAbsent(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame(10000, $config->statusIntervalMs);
+        $this->assertSame(90.0, $config->usageThrottlePct);
+        $this->assertSame(60000, $config->maxThrottlePollMs);
+    }
+
+    public function testDoneLabelDefaultValue(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame('kanine: done', $config->doneLabel);
+    }
+
+    public function testFailedLabelDefaultValue(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame('kanine: failed', $config->failedLabel);
+    }
+
+    // -------------------------------------------------------------------------
+    // ConfigLoader: usageThrottlePct validation
+    // -------------------------------------------------------------------------
+
+    public function testUsageThrottlePctBelowRangeLogsErrorAndUsesDefault(): void
+    {
+        $yaml = $this->buildYamlWithAgent(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            usageThrottlePct: 49,
+        );
+        $path = $this->writeYaml($yaml, 'throttle-low.yaml');
+
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('usage_throttle_pct'));
+
+        $loader = new ConfigLoader(logger: $logger);
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(90.0, $config->usageThrottlePct);
+    }
+
+    public function testUsageThrottlePctAboveRangeLogsErrorAndUsesDefault(): void
+    {
+        $yaml = $this->buildYamlWithAgent(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            usageThrottlePct: 100,
+        );
+        $path = $this->writeYaml($yaml, 'throttle-high.yaml');
+
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('usage_throttle_pct'));
+
+        $loader = new ConfigLoader(logger: $logger);
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(90.0, $config->usageThrottlePct);
+    }
+
+    public function testUsageThrottlePctInRangeAccepted(): void
+    {
+        $yaml = $this->buildYamlWithAgent(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            usageThrottlePct: 75,
+        );
+        $path = $this->writeYaml($yaml, 'throttle-valid.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(75.0, $config->usageThrottlePct);
+    }
+
+    // -------------------------------------------------------------------------
     // PHPUnit lifecycle
     // -------------------------------------------------------------------------
 
@@ -675,6 +773,32 @@ final class ConfigLoaderTest extends TestCase
         file_put_contents($path, $content);
 
         return $path;
+    }
+
+    /**
+     * @param list<string> $repositories
+     */
+    private function buildYamlWithAgent(
+        ?string $token,
+        array $repositories,
+        float|int|null $usageThrottlePct = null,
+        string $readyLabel = 'kanine: ready',
+        string $host = '127.0.0.1',
+        int $port = 3737,
+    ): string {
+        $base = $this->buildYaml(
+            token: $token,
+            repositories: $repositories,
+            readyLabel: $readyLabel,
+            host: $host,
+            port: $port,
+        );
+
+        if ($usageThrottlePct !== null) {
+            $base .= "\nagent:\n  usage_throttle_pct: {$usageThrottlePct}\n";
+        }
+
+        return $base;
     }
 
     private function removeDirectory(string $dir): void

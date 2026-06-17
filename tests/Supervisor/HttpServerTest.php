@@ -41,6 +41,28 @@ final class HttpServerTest extends TestCase
         $this->assertSame(5000, $body['poll_interval_ms']);
     }
 
+    public function testRegisterResponseIncludesStatusIntervalMs(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', '{"pup_id":"pup-1","hostname":"host-1"}');
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertArrayHasKey('status_interval_ms', $body);
+        $this->assertSame(10000, $body['status_interval_ms']);
+    }
+
+    public function testRegisterResponseIncludesMaxThrottlePollMs(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', '{"pup_id":"pup-1","hostname":"host-1"}');
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertArrayHasKey('max_throttle_poll_ms', $body);
+        $this->assertSame(60000, $body['max_throttle_poll_ms']);
+    }
+
     public function testHandleRegisterMissingPupIdReturns422(): void
     {
         $request  = $this->makeRequest('POST', '/pups/register', '{"hostname":"host-1"}');

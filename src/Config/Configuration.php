@@ -16,6 +16,11 @@ final readonly class Configuration
         public array $repositories,
         public string $readyLabel,
         public ?string $logFile,
+        public int $statusIntervalMs = 10000,
+        public float $usageThrottlePct = 90.0,
+        public int $maxThrottlePollMs = 60000,
+        public string $doneLabel = 'kanine: done',
+        public string $failedLabel = 'kanine: failed',
     ) {
     }
 }

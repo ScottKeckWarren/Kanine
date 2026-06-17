@@ -4,28 +4,38 @@ declare(strict_types=1);
 
 namespace ScottKeckWarren\Kanine\Config;
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Yaml\Yaml;
 
 final class ConfigLoader implements ConfigLoaderInterface
 {
-    private const DEFAULT_HOST        = '127.0.0.1';
-    private const DEFAULT_PORT        = 3737;
-    private const DEFAULT_READY_LABEL = 'kanine: ready';
-    private const DEFAULT_TOKEN_ENV   = 'GITHUB_TOKEN';
+    private const DEFAULT_HOST               = '127.0.0.1';
+    private const DEFAULT_PORT               = 3737;
+    private const DEFAULT_READY_LABEL        = 'kanine: ready';
+    private const DEFAULT_DONE_LABEL         = 'kanine: done';
+    private const DEFAULT_FAILED_LABEL       = 'kanine: failed';
+    private const DEFAULT_TOKEN_ENV          = 'GITHUB_TOKEN';
+    private const DEFAULT_STATUS_INTERVAL_MS  = 10000;
+    private const DEFAULT_USAGE_THROTTLE_PCT  = 90.0;
+    private const DEFAULT_MAX_THROTTLE_POLL_MS = 60000;
 
     /** @var list<string> */
     private readonly array $defaultPaths;
+
+    private readonly LoggerInterface $logger;
 
     /**
      * @param list<string>|null $defaultPaths Ordered list of candidate config paths; first existing file wins.
      *                                         Defaults to the standard XDG/project locations.
      */
-    public function __construct(?array $defaultPaths = null)
+    public function __construct(?array $defaultPaths = null, ?LoggerInterface $logger = null)
     {
         $this->defaultPaths = $defaultPaths ?? [
             getcwd() . '/.kanine/kanine.yaml',
             ($_SERVER['HOME'] ?? '') . '/.config/kanine/kanine.yaml',
         ];
+        $this->logger = $logger ?? new NullLogger();
     }
 
     public function load(?string $explicitPath = null): Configuration
@@ -68,6 +78,12 @@ final class ConfigLoader implements ConfigLoaderInterface
         /** @var array<string, mixed> $supervisor */
         $supervisor = $data['supervisor'] ?? [];
 
+        /** @var array<string, mixed> $agent */
+        $agent = $data['agent'] ?? [];
+
+        /** @var array<string, mixed> $labels */
+        $labels = $github['labels'] ?? [];
+
         $tokenEnv = (string) ($github['token_env'] ?? self::DEFAULT_TOKEN_ENV);
         $token    = isset($github['token'])
             ? (string) $github['token']
@@ -81,6 +97,8 @@ final class ConfigLoader implements ConfigLoaderInterface
 
         $port = (int) ($supervisor['port'] ?? self::DEFAULT_PORT);
 
+        $usageThrottlePct = $this->resolveUsageThrottlePct($agent);
+
         $config = new Configuration(
             host: (string) ($supervisor['host'] ?? self::DEFAULT_HOST),
             port: $port,
@@ -88,11 +106,38 @@ final class ConfigLoader implements ConfigLoaderInterface
             repositories: $repositories,
             readyLabel: (string) ($github['ready_label'] ?? self::DEFAULT_READY_LABEL),
             logFile: isset($data['log_file']) ? (string) $data['log_file'] : null,
+            statusIntervalMs: (int) ($agent['status_interval_ms'] ?? self::DEFAULT_STATUS_INTERVAL_MS),
+            usageThrottlePct: $usageThrottlePct,
+            maxThrottlePollMs: (int) ($agent['max_throttle_poll_ms'] ?? self::DEFAULT_MAX_THROTTLE_POLL_MS),
+            doneLabel: (string) ($labels['done'] ?? self::DEFAULT_DONE_LABEL),
+            failedLabel: (string) ($labels['failed'] ?? self::DEFAULT_FAILED_LABEL),
         );
 
         $this->validate($config, $tokenEnv);
 
         return $config;
+    }
+
+    /**
+     * @param array<string, mixed> $agent
+     */
+    private function resolveUsageThrottlePct(array $agent): float
+    {
+        if (!isset($agent['usage_throttle_pct'])) {
+            return self::DEFAULT_USAGE_THROTTLE_PCT;
+        }
+
+        $value = (float) $agent['usage_throttle_pct'];
+
+        if ($value < 50.0 || $value > 99.0) {
+            $this->logger->error(
+                "Config error: usage_throttle_pct must be between 50 and 99 (got {$value}). Using default 90.0."
+            );
+
+            return self::DEFAULT_USAGE_THROTTLE_PCT;
+        }
+
+        return $value;
     }
 
     private function validate(Configuration $config, string $tokenEnv): void
@@ -139,6 +184,11 @@ final class ConfigLoader implements ConfigLoaderInterface
             repositories: [],
             readyLabel: self::DEFAULT_READY_LABEL,
             logFile: null,
+            statusIntervalMs: self::DEFAULT_STATUS_INTERVAL_MS,
+            usageThrottlePct: self::DEFAULT_USAGE_THROTTLE_PCT,
+            maxThrottlePollMs: self::DEFAULT_MAX_THROTTLE_POLL_MS,
+            doneLabel: self::DEFAULT_DONE_LABEL,
+            failedLabel: self::DEFAULT_FAILED_LABEL,
         );
     }
 }
