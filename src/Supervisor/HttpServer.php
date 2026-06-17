@@ -80,6 +80,10 @@ final class HttpServer implements HttpServerInterface
             return $this->handleTaskComplete($request, $matches[1]);
         }
 
+        if ($method === 'POST' && preg_match('#^/tasks/([^/]+)/status$#', $path, $matches)) {
+            return $this->handleTaskStatus($request, $matches[1]);
+        }
+
         return $this->jsonResponse(404, ['error' => 'Not found']);
     }
 
@@ -237,6 +241,52 @@ final class HttpServer implements HttpServerInterface
         $this->logger->info("Pup {$pupId} now idle after completing task {$taskId}");
 
         return $this->jsonResponse(200, ['label_actions' => $labelActions]);
+    }
+
+    private function handleTaskStatus(ServerRequestInterface $request, string $taskId): Response
+    {
+        $body = (string) $request->getBody();
+
+        try {
+            $data = $body !== ''
+                ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+        } catch (JsonException $e) {
+            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+        }
+
+        $data  = is_array($data) ? $data : [];
+        $pupId = $data['pup_id'] ?? null;
+
+        if (!is_string($pupId) || $pupId === '') {
+            return $this->jsonResponse(422, ['error' => 'pup_id is required']);
+        }
+
+        $message = $data['message'] ?? null;
+
+        if (!is_string($message) || $message === '') {
+            return $this->jsonResponse(422, ['error' => 'message is required']);
+        }
+
+        $owningPup = $this->pupRegistry->findByAssignedTask($taskId);
+
+        if ($owningPup === null) {
+            return $this->jsonResponse(404, ['error' => "Unknown task: {$taskId}"]);
+        }
+
+        if ($owningPup->id !== $pupId) {
+            return $this->jsonResponse(403, ['error' => 'Forbidden']);
+        }
+
+        $token = $this->extractBearerToken($request);
+
+        if ($token === null || !$this->pupRegistry->validate(pupId: $pupId, token: $token)) {
+            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+        }
+
+        $this->logger->info("Status from pup {$pupId} on task {$taskId}: {$message}");
+
+        return new Response(204);
     }
 
     private function extractBearerToken(ServerRequestInterface $request): ?string
