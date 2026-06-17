@@ -8,6 +8,7 @@ use Closure;
 use Psr\Log\LoggerInterface;
 use ScottKeckWarren\Kanine\Pup\ClaudeRunner;
 use ScottKeckWarren\Kanine\Pup\PupClientInterface;
+use ScottKeckWarren\Kanine\ValueObject\String\Prompt;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -15,7 +16,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class PupCommand extends Command
 {
-    /** @var Closure(string $title, string $body): ClaudeRunner */
+    /** @var Closure(Prompt $prompt, int $issueNumber, string $title, string $body): ClaudeRunner */
     private readonly Closure $runnerFactory;
 
     /** @var callable(int, callable): void */
@@ -31,9 +32,20 @@ final class PupCommand extends Command
         ?Closure $runnerFactory = null,
         ?callable $signalInstaller = null,
         ?callable $exitCallback = null,
+        private readonly Prompt $prompt = new Prompt('You are a helpful software engineer.'),
     ) {
         $this->runnerFactory = $runnerFactory
-            ?? static fn (string $title, string $body): ClaudeRunner => new ClaudeRunner($title, $body);
+            ?? static fn (
+                Prompt $prompt,
+                int $issueNumber,
+                string $title,
+                string $body,
+            ): ClaudeRunner => new ClaudeRunner(
+                prompt: $prompt,
+                issueNumber: $issueNumber,
+                title: $title,
+                body: $body,
+            );
         $this->signalInstaller = $signalInstaller ?? static function (int $signal, callable $handler): void {
             if (function_exists('pcntl_signal')) {
                 pcntl_signal($signal, $handler);
@@ -105,7 +117,7 @@ final class PupCommand extends Command
                 $this->logger->info("Starting claude for issue #{$issueNumber}: {$title}");
                 $this->logger->info("Assigned task #{$issueNumber}: {$title} ({$repo})");
 
-                $runner             = ($this->runnerFactory)($title, $body);
+                $runner             = ($this->runnerFactory)($this->prompt, $issueNumber, $title, $body);
                 $currentIssueNumber = $issueNumber;
                 $runner->start();
                 $status = 'working';

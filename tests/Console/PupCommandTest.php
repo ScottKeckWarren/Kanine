@@ -9,6 +9,7 @@ use Psr\Log\LoggerInterface;
 use ScottKeckWarren\Kanine\Console\Command\PupCommand;
 use ScottKeckWarren\Kanine\Pup\ClaudeRunner;
 use ScottKeckWarren\Kanine\Pup\PupClientInterface;
+use ScottKeckWarren\Kanine\ValueObject\String\Prompt;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Process\Process;
@@ -239,13 +240,19 @@ final class PupCommandTest extends TestCase
         $process = $this->createMock(Process::class);
         $process->method('isRunning')->willReturn(true);
 
-        $runner = new ClaudeRunner(title: 'Fix the bug', body: 'details', process: $process);
+        $runner = new ClaudeRunner(
+            prompt: new Prompt('You are helpful.'),
+            issueNumber: 42,
+            title: 'Fix the bug',
+            body: 'details',
+            process: $process,
+        );
 
         $command = new PupCommand(
             pupClient: $client,
             logger: $this->createMock(LoggerInterface::class),
             maxPolls: 2,
-            runnerFactory: static fn (string $t, string $b) => $runner,
+            runnerFactory: static fn (Prompt $p, int $n, string $t, string $b) => $runner,
         );
 
         $tester = new CommandTester($command);
@@ -305,9 +312,23 @@ final class PupCommandTest extends TestCase
         $stubProcess = $this->createMock(Process::class);
         $stubProcess->method('isRunning')->willReturn(true);
 
-        $factory = function (string $title, string $body) use (&$factoryCalls, $stubProcess): ClaudeRunner {
+        $factory = function (
+            Prompt $prompt,
+            int $issueNumber,
+            string $title,
+            string $body,
+        ) use (
+            &$factoryCalls,
+            $stubProcess,
+        ): ClaudeRunner {
             $factoryCalls[] = ['title' => $title, 'body' => $body];
-            return new ClaudeRunner(title: $title, body: $body, process: $stubProcess);
+            return new ClaudeRunner(
+                prompt: $prompt,
+                issueNumber: $issueNumber,
+                title: $title,
+                body: $body,
+                process: $stubProcess,
+            );
         };
 
         $command = new PupCommand(
@@ -346,8 +367,8 @@ final class PupCommandTest extends TestCase
         $stubProcess->expects($this->once())->method('start');
         $stubProcess->method('isRunning')->willReturn(true);
 
-        $factory = fn (string $title, string $body): ClaudeRunner =>
-            new ClaudeRunner(title: $title, body: $body, process: $stubProcess);
+        $factory = fn (Prompt $p, int $n, string $title, string $body): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $title, body: $body, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
@@ -388,8 +409,8 @@ final class PupCommandTest extends TestCase
         $stubProcess = $this->createMock(Process::class);
         $stubProcess->method('isRunning')->willReturn(true);
 
-        $factory = fn (string $title, string $body): ClaudeRunner =>
-            new ClaudeRunner(title: $title, body: $body, process: $stubProcess);
+        $factory = fn (Prompt $p, int $n, string $title, string $body): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $title, body: $body, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
@@ -445,8 +466,8 @@ final class PupCommandTest extends TestCase
             });
         $stubProcess->method('getExitCode')->willReturn(0);
 
-        $factory = fn (string $title, string $body): ClaudeRunner =>
-            new ClaudeRunner(title: $title, body: $body, process: $stubProcess);
+        $factory = fn (Prompt $p, int $n, string $title, string $body): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $title, body: $body, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
@@ -500,8 +521,8 @@ final class PupCommandTest extends TestCase
         $stubProcess->method('isRunning')->willReturn(false);
         $stubProcess->method('getExitCode')->willReturn(0);
 
-        $factory = fn (string $title, string $body): ClaudeRunner =>
-            new ClaudeRunner(title: $title, body: $body, process: $stubProcess);
+        $factory = fn (Prompt $p, int $n, string $title, string $body): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $title, body: $body, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
@@ -569,7 +590,8 @@ final class PupCommandTest extends TestCase
         $stubProcess->method('isRunning')->willReturn(true);
         $stubProcess->expects($this->once())->method('stop');
 
-        $factory = fn (string $t, string $b): ClaudeRunner => new ClaudeRunner($t, $b, $stubProcess);
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
 
         $exitCalled   = false;
         $exitCallback = function () use (&$exitCalled): void {
