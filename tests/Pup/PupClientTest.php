@@ -186,6 +186,53 @@ final class PupClientTest extends TestCase
         $this->assertSame('working', $body['status']);
     }
 
+    public function testPollSendsUsagePct(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['new_task' => null, 'throttled' => false], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->poll(pupId: 'pup-1', token: 'tok', status: 'idle', usagePct: 55.0);
+
+        $this->assertCount(1, $capturedRequests);
+        $body = json_decode((string) $capturedRequests[0]->getBody(), associative: true);
+        $this->assertEqualsWithDelta(55.0, $body['usage_pct'], 0.001);
+    }
+
+    public function testPollReturnsThrottledFlag(): void
+    {
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['new_task' => null, 'throttled' => true], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $client = $this->makeClient($mock);
+
+        $result = $client->poll(pupId: 'pup-1', token: 'tok', status: 'idle');
+
+        $this->assertTrue($result['throttled']);
+    }
+
     public function testPollDoesNotThrowOn401ButReRegistersInstead(): void
     {
         // When poll receives a 401, it re-registers (needing a prior register call)
@@ -510,6 +557,143 @@ final class PupClientTest extends TestCase
         // 4th request is the retry poll; it should use the fresh token
         $this->assertCount(4, $capturedRequests);
         $this->assertSame('Bearer fresh-token', $capturedRequests[3]->getHeaderLine('Authorization'));
+    }
+
+    // -------------------------------------------------------------------------
+    // postStatus()
+    // -------------------------------------------------------------------------
+
+    public function testPostStatusSendsCorrectRequest(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(status: 204),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->postStatus(
+            pupId: 'pup-1',
+            token: 'my-token',
+            taskId: 'task-99',
+            message: 'Working on it',
+        );
+
+        $this->assertCount(1, $capturedRequests);
+        $req = $capturedRequests[0];
+
+        $this->assertStringContainsString('/tasks/task-99/status', $req->getUri()->getPath());
+        $this->assertSame('Bearer my-token', $req->getHeaderLine('Authorization'));
+
+        $body = json_decode((string) $req->getBody(), associative: true);
+        $this->assertSame('pup-1', $body['pup_id']);
+        $this->assertSame('Working on it', $body['message']);
+    }
+
+    public function testPostStatusThrowsOnNon204(): void
+    {
+        $mock = new MockHandler([
+            new Response(status: 500),
+        ]);
+
+        $client = $this->makeClient($mock);
+
+        $this->expectException(\RuntimeException::class);
+
+        $client->postStatus(
+            pupId: 'pup-1',
+            token: 'tok',
+            taskId: 'task-99',
+            message: 'hello',
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // postComplete()
+    // -------------------------------------------------------------------------
+
+    public function testPostCompleteReturnsLabelActions(): void
+    {
+        $responsePayload = [
+            'label_actions' => [
+                ['action' => 'add', 'label' => 'done'],
+            ],
+        ];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode($responsePayload, JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $client = $this->makeClient($mock);
+
+        $result = $client->postComplete(
+            pupId: 'pup-1',
+            token: 'tok',
+            taskId: 'task-99',
+            outcome: 'success',
+            summary: 'All done',
+            usagePct: null,
+        );
+
+        $this->assertSame($responsePayload, $result);
+    }
+
+    public function testPostCompleteIncludesUsagePct(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['label_actions' => []], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->postComplete(
+            pupId: 'pup-1',
+            token: 'tok',
+            taskId: 'task-99',
+            outcome: 'success',
+            summary: 'All done',
+            usagePct: 72.5,
+        );
+
+        $this->assertCount(1, $capturedRequests);
+        $req  = $capturedRequests[0];
+        $body = json_decode((string) $req->getBody(), associative: true);
+
+        $this->assertStringContainsString('/tasks/task-99/complete', $req->getUri()->getPath());
+        $this->assertSame('Bearer tok', $req->getHeaderLine('Authorization'));
+        $this->assertSame('pup-1', $body['pup_id']);
+        $this->assertSame('success', $body['outcome']);
+        $this->assertSame('All done', $body['summary']);
+        $this->assertSame(72.5, $body['usage_pct']);
     }
 
     // -------------------------------------------------------------------------

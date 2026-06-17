@@ -16,7 +16,28 @@ interface PupClientInterface
     /**
      * Poll the supervisor for a new task assignment.
      *
-     * @return array{new_task: array<string, mixed>|null}
+     * @return array{new_task: array<string, mixed>|null, throttled: bool}
      */
-    public function poll(string $pupId, string $token, string $status): array;
+    public function poll(string $pupId, string $token, string $status, ?float $usagePct = null): array;
+
+    /**
+     * Post a status update for a running task.
+     *
+     * @throws \RuntimeException on non-204 response
+     */
+    public function postStatus(string $pupId, string $token, string $taskId, string $message): void;
+
+    /**
+     * Mark a task as complete.
+     *
+     * @return array<string, mixed>
+     */
+    public function postComplete(
+        string $pupId,
+        string $token,
+        string $taskId,
+        string $outcome,
+        string $summary,
+        ?float $usagePct,
+    ): array;
 }

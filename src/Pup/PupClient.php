@@ -65,13 +65,13 @@ final class PupClient implements PupClientInterface
      * Retries with exponential backoff on connection failures.
      * Re-registers and retries once on 401 Unauthorized.
      *
-     * @return array{new_task: array<string, mixed>|null}
+     * @return array{new_task: array<string, mixed>|null, throttled: bool}
      */
-    public function poll(string $pupId, string $token, string $status): array
+    public function poll(string $pupId, string $token, string $status, ?float $usagePct = null): array
     {
         while (true) {
             try {
-                $result              = $this->doPoll($pupId, $token, $status);
+                $result               = $this->doPoll($pupId, $token, $status, $usagePct);
                 $this->backoffSeconds = 1;
                 return $result;
             } catch (ConnectException) {
@@ -94,21 +94,70 @@ final class PupClient implements PupClientInterface
         }
     }
 
+    public function postStatus(string $pupId, string $token, string $taskId, string $message): void
+    {
+        $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/status", [
+            'headers' => [
+                'Authorization' => "Bearer {$token}",
+            ],
+            'json' => [
+                'pup_id'  => $pupId,
+                'message' => $message,
+            ],
+        ]);
+
+        if ($response->getStatusCode() !== 204) {
+            throw new \RuntimeException(
+                "Expected 204, got {$response->getStatusCode()}"
+            );
+        }
+    }
+
     /**
-     * @return array{new_task: array<string, mixed>|null}
+     * @return array<string, mixed>
      */
-    private function doPoll(string $pupId, string $token, string $status): array
+    public function postComplete(
+        string $pupId,
+        string $token,
+        string $taskId,
+        string $outcome,
+        string $summary,
+        ?float $usagePct,
+    ): array {
+        $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/complete", [
+            'headers' => [
+                'Authorization' => "Bearer {$token}",
+            ],
+            'json' => [
+                'pup_id'    => $pupId,
+                'outcome'   => $outcome,
+                'summary'   => $summary,
+                'usage_pct' => $usagePct,
+            ],
+        ]);
+
+        /** @var array<string, mixed> $data */
+        $data = json_decode((string) $response->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        return $data;
+    }
+
+    /**
+     * @return array{new_task: array<string, mixed>|null, throttled: bool}
+     */
+    private function doPoll(string $pupId, string $token, string $status, ?float $usagePct): array
     {
         $response = $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/poll", [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
             ],
             'json' => [
-                'status' => $status,
+                'status'    => $status,
+                'usage_pct' => $usagePct,
             ],
         ]);
 
-        /** @var array{new_task: array<string, mixed>|null} $data */
+        /** @var array{new_task: array<string, mixed>|null, throttled: bool} $data */
         $data = json_decode((string) $response->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         return $data;
