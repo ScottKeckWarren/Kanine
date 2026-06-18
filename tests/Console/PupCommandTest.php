@@ -8,6 +8,9 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use ScottKeckWarren\Kanine\Console\Command\PupCommand;
 use ScottKeckWarren\Kanine\Pup\ClaudeRunner;
+use ScottKeckWarren\Kanine\Pup\GitHubLabelWriterInterface;
+use ScottKeckWarren\Kanine\Pup\PromptResolver;
+use ScottKeckWarren\Kanine\Pup\PromptResolverInterface;
 use ScottKeckWarren\Kanine\Pup\PupClientInterface;
 use ScottKeckWarren\Kanine\ValueObject\String\Prompt;
 use Symfony\Component\Console\Command\Command;
@@ -147,19 +150,29 @@ final class PupCommandTest extends TestCase
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'details',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
-            ->willReturn(['new_task' => $task]);
+            ->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->method('postComplete')->willReturn([]);
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
             logger: $logger,
             maxPolls: 1,
+            runnerFactory: $factory,
         );
 
         $tester = new CommandTester($command);
@@ -187,19 +200,29 @@ final class PupCommandTest extends TestCase
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'details',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
-            ->willReturn(['new_task' => $task]);
+            ->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->method('postComplete')->willReturn([]);
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
             logger: $logger,
             maxPolls: 1,
+            runnerFactory: $factory,
         );
 
         $tester = new CommandTester($command);
@@ -213,53 +236,57 @@ final class PupCommandTest extends TestCase
         $this->assertNotEmpty($matched, 'Expected at least one info log containing task title and repo');
     }
 
-    public function testPollLoopContinuesWithWorkingStatusAfterTaskAssigned(): void
+    public function testPollLoopEntersTickLoopWhileRunnerIsRunning(): void
     {
+        // In the new design, once a task is received and the runner starts,
+        // the command enters a blocking tick loop until the runner exits.
+        // Polling only resumes after the runner finishes (with idle status).
         $task = [
             'id'           => 'org/repo#42',
             'issue_number' => 42,
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'details',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
-        $pollCalls = [];
+        // isRunning: true on first tick check, false on second — exits tick loop
+        $isRunningCount = 0;
+        $stubProcess    = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturnCallback(function () use (&$isRunningCount): bool {
+            $isRunningCount++;
+            return $isRunningCount <= 1;
+        });
+        $stubProcess->method('getExitCode')->willReturn(0);
 
-        $client = $this->createMock(PupClientInterface::class);
-        $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
-        $client->method('poll')
-            ->willReturnCallback(
-                function (string $pupId, string $token, string $status) use ($task, &$pollCalls): array {
-                    $pollCalls[] = $status;
-                    return ['new_task' => $task];
-                },
-            );
+        $pollCallCount = 0;
+        $client        = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($task, &$pollCallCount): array {
+            $pollCallCount++;
+            return $pollCallCount === 1
+                ? ['new_task' => $task, 'throttled' => false]
+                : ['new_task' => null, 'throttled' => false];
+        });
+        $client->method('postComplete')->willReturn([]);
 
-        $process = $this->createMock(Process::class);
-        $process->method('isRunning')->willReturn(true);
-
-        $runner = new ClaudeRunner(
-            prompt: new Prompt('You are helpful.'),
-            issueNumber: 42,
-            title: 'Fix the bug',
-            body: 'details',
-            process: $process,
-        );
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
 
         $command = new PupCommand(
             pupClient: $client,
             logger: $this->createMock(LoggerInterface::class),
             maxPolls: 2,
-            runnerFactory: static fn (Prompt $p, int $n, string $t, string $b) => $runner,
+            runnerFactory: $factory,
+            tickSleepFn: static function (): void {
+            },
         );
 
-        $tester = new CommandTester($command);
-        $tester->execute(['--pup-id' => 'pup-1']);
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
 
-        $this->assertSame('idle', $pollCalls[0]);
-        $this->assertSame('working', $pollCalls[1]);
+        // tick loop ran at least once (isRunning was called)
+        $this->assertGreaterThanOrEqual(1, $isRunningCount);
     }
 
     // -------------------------------------------------------------------------
@@ -298,19 +325,22 @@ final class PupCommandTest extends TestCase
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'Some details here',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
-            ->willReturn(['new_task' => $task]);
+            ->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->method('postComplete')->willReturn([]);
 
         $factoryCalls = [];
 
         $stubProcess = $this->createMock(Process::class);
-        $stubProcess->method('isRunning')->willReturn(true);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
 
         $factory = function (
             Prompt $prompt,
@@ -354,18 +384,21 @@ final class PupCommandTest extends TestCase
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'Some details here',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
-            ->willReturn(['new_task' => $task]);
+            ->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->method('postComplete')->willReturn([]);
 
         $stubProcess = $this->createMock(Process::class);
         $stubProcess->expects($this->once())->method('start');
-        $stubProcess->method('isRunning')->willReturn(true);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
 
         $factory = fn (Prompt $p, int $n, string $title, string $body): ClaudeRunner =>
             new ClaudeRunner(prompt: $p, issueNumber: $n, title: $title, body: $body, process: $stubProcess);
@@ -397,17 +430,20 @@ final class PupCommandTest extends TestCase
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'Some details here',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
-            ->willReturn(['new_task' => $task]);
+            ->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->method('postComplete')->willReturn([]);
 
         $stubProcess = $this->createMock(Process::class);
-        $stubProcess->method('isRunning')->willReturn(true);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
 
         $factory = fn (Prompt $p, int $n, string $title, string $body): ClaudeRunner =>
             new ClaudeRunner(prompt: $p, issueNumber: $n, title: $title, body: $body, process: $stubProcess);
@@ -430,39 +466,52 @@ final class PupCommandTest extends TestCase
 
     public function testStatusResetsToIdleAfterRunnerFinishes(): void
     {
+        // In the new design, once a task is received, the command enters a blocking
+        // tick loop until the runner exits — no polling occurs while running.
+        // After the runner exits and postComplete is called, the next poll is idle.
         $task = [
             'id'           => 'org/repo#42',
             'issue_number' => 42,
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'details',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
-        $loopTick     = 0;
         $pollStatuses = [];
+        $pollCount    = 0;
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
             ->willReturnCallback(
-                function (string $pupId, string $token, string $status) use ($task, &$loopTick, &$pollStatuses): array {
+                function (
+                    string $pupId,
+                    string $token,
+                    string $status
+                ) use (
+                    $task,
+                    &$pollCount,
+                    &$pollStatuses,
+                ): array {
                     $pollStatuses[] = $status;
-                    $loopTick++;
-                    // First poll returns a task; subsequent polls return no task
-                    return $loopTick === 1 ? ['new_task' => $task] : ['new_task' => null];
+                    $pollCount++;
+                    return $pollCount === 1
+                        ? ['new_task' => $task, 'throttled' => false]
+                        : ['new_task' => null, 'throttled' => false];
                 },
             );
+        $client->method('postComplete')->willReturn([]);
 
-        // isRunning returns true on first check (tick 2 pre-poll check), false on second (tick 3 pre-poll check)
-        $isRunningCallCount = 0;
-        $stubProcess        = $this->createMock(Process::class);
+        // Tick loop: true on first isRunning check, false on second → exits tick loop
+        $isRunningCount = 0;
+        $stubProcess    = $this->createMock(Process::class);
         $stubProcess->method('isRunning')
-            ->willReturnCallback(function () use (&$isRunningCallCount): bool {
-                $isRunningCallCount++;
-                // Still running on first check, finished on second
-                return $isRunningCallCount === 1;
+            ->willReturnCallback(function () use (&$isRunningCount): bool {
+                $isRunningCount++;
+                return $isRunningCount <= 1;
             });
         $stubProcess->method('getExitCode')->willReturn(0);
 
@@ -472,17 +521,18 @@ final class PupCommandTest extends TestCase
         $command = new PupCommand(
             pupClient: $client,
             logger: $this->createMock(LoggerInterface::class),
-            maxPolls: 3,
+            maxPolls: 2,
             runnerFactory: $factory,
+            tickSleepFn: static function (): void {
+            },
         );
 
-        $tester = new CommandTester($command);
-        $tester->execute(['--pup-id' => 'pup-1']);
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
 
+        // poll 1: idle (task received, tick loop runs, runner exits)
+        // poll 2: idle (after runner cleanup)
         $this->assertSame('idle', $pollStatuses[0]);
-        $this->assertSame('working', $pollStatuses[1]);
-        // After runner exits (isRunning false on second check), next poll should be idle again
-        $this->assertSame('idle', $pollStatuses[2]);
+        $this->assertSame('idle', $pollStatuses[1]);
     }
 
     public function testExitCodeIsLoggedWhenRunnerFinishes(): void
@@ -501,6 +551,7 @@ final class PupCommandTest extends TestCase
             'repo'         => 'org/repo',
             'title'        => 'Fix the bug',
             'body'         => 'details',
+            'labels'       => [],
             'state'        => 'queued',
         ];
 
@@ -508,14 +559,17 @@ final class PupCommandTest extends TestCase
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')
-            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 100]);
+            ->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
         $client->method('poll')
             ->willReturnCallback(
                 function () use ($task, &$pollCount): array {
                     $pollCount++;
-                    return $pollCount === 1 ? ['new_task' => $task] : ['new_task' => null];
+                    return $pollCount === 1
+                        ? ['new_task' => $task, 'throttled' => false]
+                        : ['new_task' => null, 'throttled' => false];
                 },
             );
+        $client->method('postComplete')->willReturn([]);
 
         $stubProcess = $this->createMock(Process::class);
         $stubProcess->method('isRunning')->willReturn(false);
@@ -579,23 +633,42 @@ final class PupCommandTest extends TestCase
 
         $task = [
             'id' => 'org/repo#1', 'issue_number' => 1, 'repo' => 'org/repo',
-            'title' => 'T', 'body' => 'B', 'state' => 'queued',
+            'title' => 'T', 'body' => 'B', 'labels' => [], 'state' => 'queued',
         ];
 
         $client = $this->createMock(PupClientInterface::class);
         $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
-        $client->method('poll')->willReturn(['new_task' => $task]);
+        $client->method('poll')->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->method('postComplete')->willReturn([]);
 
-        $stubProcess = $this->createMock(Process::class);
-        $stubProcess->method('isRunning')->willReturn(true);
+        $exitCalled   = false;
+        $exitCallback = function () use (&$exitCalled): void {
+            $exitCalled = true;
+        };
+
+        // isRunning: true on first tick-loop check; tickSleepFn fires the signal handler
+        // which calls isRunning (check 2 → true → stop called) then exitCallback.
+        // Then tick loop checks isRunning again (check 3 → false) → exits.
+        $isRunningCount = 0;
+        $stubProcess    = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturnCallback(
+            function () use (&$isRunningCount): bool {
+                $isRunningCount++;
+                // checks 1 and 2: true; check 3+: false
+                return $isRunningCount <= 2;
+            },
+        );
         $stubProcess->expects($this->once())->method('stop');
 
         $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
             new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
 
-        $exitCalled   = false;
-        $exitCallback = function () use (&$exitCalled): void {
-            $exitCalled = true;
+        // tickSleepFn fires the signal handler mid-tick-loop
+        $tickSleepFn = function () use (&$capturedHandler): void {
+            if ($capturedHandler !== null) {
+                ($capturedHandler)(SIGINT, null);
+                $capturedHandler = null; // fire only once
+            }
         };
 
         $command = new PupCommand(
@@ -605,12 +678,10 @@ final class PupCommandTest extends TestCase
             runnerFactory: $factory,
             signalInstaller: $signalInstaller,
             exitCallback: $exitCallback,
+            tickSleepFn: $tickSleepFn,
         );
 
         (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
-
-        $this->assertNotNull($capturedHandler);
-        ($capturedHandler)(SIGINT, null);
 
         $this->assertTrue($exitCalled);
     }
@@ -685,6 +756,517 @@ final class PupCommandTest extends TestCase
         ($capturedHandler)(SIGINT, null);
 
         $this->assertTrue($exitCalled);
+    }
+
+    // -------------------------------------------------------------------------
+    // usage_pct
+    // -------------------------------------------------------------------------
+
+    public function testUsagePctNullSentOnPoll(): void
+    {
+        $pollUsagePcts = [];
+
+        $client = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(
+            function (string $pupId, string $token, string $status, ?float $usagePct) use (&$pollUsagePcts): array {
+                $pollUsagePcts[] = $usagePct;
+                return ['new_task' => null, 'throttled' => false];
+            },
+        );
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertCount(2, $pollUsagePcts);
+        $this->assertNull($pollUsagePcts[0]);
+        $this->assertNull($pollUsagePcts[1]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Throttle handling
+    // -------------------------------------------------------------------------
+
+    public function testThrottledResponseDoublesPollDelay(): void
+    {
+        $pollSleepDelays = [];
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 500]);
+        $client->method('poll')->willReturnCallback(function () use (&$pollCount): array {
+            $pollCount++;
+            // First poll returns throttled: true; second returns no task
+            return $pollCount === 1
+                ? ['new_task' => null, 'throttled' => true]
+                : ['new_task' => null, 'throttled' => false];
+        });
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            maxThrottlePollMs: 60_000,
+            pollSleepFn: static function (int $ms) use (&$pollSleepDelays): void {
+                $pollSleepDelays[] = $ms;
+            },
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        // After throttled poll, delay should be doubled: 500 * 2 = 1000
+        $this->assertSame(1000, $pollSleepDelays[0]);
+    }
+
+    public function testThrottleResetRestoresNormalPollDelay(): void
+    {
+        $pollSleepDelays = [];
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 500]);
+        $client->method('poll')->willReturnCallback(function () use (&$pollCount): array {
+            $pollCount++;
+            return match ($pollCount) {
+                1 => ['new_task' => null, 'throttled' => true],   // throttled
+                2 => ['new_task' => null, 'throttled' => false],  // reset
+                default => ['new_task' => null, 'throttled' => false],
+            };
+        });
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 3,
+            maxThrottlePollMs: 60_000,
+            pollSleepFn: static function (int $ms) use (&$pollSleepDelays): void {
+                $pollSleepDelays[] = $ms;
+            },
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        // Poll 1 throttled → delay doubled: 500 * 2 = 1000
+        $this->assertSame(1000, $pollSleepDelays[0]);
+        // Poll 2 not throttled → delay reset to poll_interval_ms: 500
+        $this->assertSame(500, $pollSleepDelays[1]);
+    }
+
+    public function testThrottleDelayIsCappedAtMaxThrottlePollMs(): void
+    {
+        $pollSleepDelays = [];
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 500]);
+        $client->method('poll')->willReturnCallback(function () use (&$pollCount): array {
+            $pollCount++;
+            // Throttled for first 3 polls so we can see the cap
+            return $pollCount <= 3
+                ? ['new_task' => null, 'throttled' => true]
+                : ['new_task' => null, 'throttled' => false];
+        });
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 4,
+            maxThrottlePollMs: 1500,
+            pollSleepFn: static function (int $ms) use (&$pollSleepDelays): void {
+                $pollSleepDelays[] = $ms;
+            },
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        // Poll 1: 500 * 2 = 1000
+        $this->assertSame(1000, $pollSleepDelays[0]);
+        // Poll 2: 1000 * 2 = 2000 → capped at 1500
+        $this->assertSame(1500, $pollSleepDelays[1]);
+        // Poll 3: 1500 * 2 = 3000 → capped at 1500
+        $this->assertSame(1500, $pollSleepDelays[2]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Label writer integration
+    // -------------------------------------------------------------------------
+
+    public function testLabelWriterCalledAfterComplete(): void
+    {
+        $task = [
+            'id'           => 'task-label-1',
+            'issue_number' => 10,
+            'repo'         => 'org/repo',
+            'title'        => 'Label task',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        $labelActions = [['add' => 'done'], ['remove' => 'in-progress']];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($task, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['new_task' => $task, 'throttled' => false]
+                : ['new_task' => null, 'throttled' => false];
+        });
+        $client->method('postComplete')->willReturn(['label_actions' => $labelActions]);
+
+        $labelWriter = $this->createMock(GitHubLabelWriterInterface::class);
+        $labelWriter->expects($this->once())
+            ->method('applyActions')
+            ->with(
+                repo: 'org/repo',
+                issueNumber: 10,
+                labelActions: $labelActions,
+            );
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            labelWriter: $labelWriter,
+            repo: 'org/repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    public function testLabelWriterFailureDoesNotBlockPoll(): void
+    {
+        $task = [
+            'id'           => 'task-label-fail',
+            'issue_number' => 11,
+            'repo'         => 'org/repo',
+            'title'        => 'Failing label task',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        $labelActions = [['add' => 'done']];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount      = 0;
+        $secondPollSeen = false;
+        $client         = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(
+            function () use ($task, &$pollCount, &$secondPollSeen): array {
+                $pollCount++;
+                if ($pollCount === 1) {
+                    return ['new_task' => $task, 'throttled' => false];
+                }
+                $secondPollSeen = true;
+                return ['new_task' => null, 'throttled' => false];
+            },
+        );
+        $client->method('postComplete')->willReturn(['label_actions' => $labelActions]);
+
+        $labelWriter = $this->createMock(GitHubLabelWriterInterface::class);
+        $labelWriter->method('applyActions')
+            ->willThrowException(new \RuntimeException('GitHub API error'));
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            labelWriter: $labelWriter,
+            repo: 'org/repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertTrue($secondPollSeen, 'Pup should continue polling after label writer failure');
+    }
+
+    // -------------------------------------------------------------------------
+    // PromptResolver integration
+    // -------------------------------------------------------------------------
+
+    public function testPromptResolverCalledOnTaskReceipt(): void
+    {
+        $task = [
+            'id'           => 'org/repo#7',
+            'issue_number' => 7,
+            'repo'         => 'org/repo',
+            'title'        => 'Some task',
+            'body'         => 'body text',
+            'labels'       => ['bug', 'backend'],
+            'state'        => 'queued',
+        ];
+
+        $client = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturn(['new_task' => $task, 'throttled' => false]);
+
+        $resolvedPrompt = new Prompt('Resolved prompt text');
+
+        $resolver = $this->createMock(PromptResolverInterface::class);
+        $resolver->expects($this->once())
+            ->method('resolve')
+            ->with(['bug', 'backend'])
+            ->willReturn($resolvedPrompt);
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 1,
+            runnerFactory: $factory,
+            promptResolver: $resolver,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    // -------------------------------------------------------------------------
+    // Status posting while running
+    // -------------------------------------------------------------------------
+
+    public function testStatusPostedWhileRunning(): void
+    {
+        $task = [
+            'id'           => 'task-id-99',
+            'issue_number' => 99,
+            'repo'         => 'org/repo',
+            'title'        => 'Running task',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        // isRunning: true on first tick, false on second (exits loop)
+        $isRunningCount = 0;
+        $stubProcess    = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturnCallback(function () use (&$isRunningCount): bool {
+            $isRunningCount++;
+            return $isRunningCount <= 1;
+        });
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        // Clock: starts at 0, advances past statusIntervalMs on second call
+        $clockCalls = 0;
+        $clockFn    = function () use (&$clockCalls): float {
+            $clockCalls++;
+            return (float) ($clockCalls * 200); // 200ms increments
+        };
+
+        $postStatusCalled = false;
+        $client           = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturn(['new_task' => $task, 'throttled' => false]);
+        $client->expects($this->atLeastOnce())
+            ->method('postStatus');
+        $client->method('postComplete')->willReturn([]);
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            statusIntervalMs: 100,
+            clockFn: $clockFn,
+            tickSleepFn: static function (): void {
+            },
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    // -------------------------------------------------------------------------
+    // postComplete on exit
+    // -------------------------------------------------------------------------
+
+    public function testPostCompleteCalledWithSuccessOnExitCode0(): void
+    {
+        $task = [
+            'id'           => 'task-id-42',
+            'issue_number' => 42,
+            'repo'         => 'org/repo',
+            'title'        => 'Fix it',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($task, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['new_task' => $task, 'throttled' => false]
+                : ['new_task' => null, 'throttled' => false];
+        });
+        $client->expects($this->once())
+            ->method('postComplete')
+            ->with(
+                pupId: 'pup-1',
+                token: 'tok',
+                taskId: 'task-id-42',
+                outcome: 'success',
+                summary: '',
+                usagePct: null,
+            )
+            ->willReturn([]);
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    public function testPostCompleteCalledWithFailureOnNonZeroExitCode(): void
+    {
+        $task = [
+            'id'           => 'task-id-77',
+            'issue_number' => 77,
+            'repo'         => 'org/repo',
+            'title'        => 'Fix it',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(1);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($task, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['new_task' => $task, 'throttled' => false]
+                : ['new_task' => null, 'throttled' => false];
+        });
+        $client->expects($this->once())
+            ->method('postComplete')
+            ->with(
+                pupId: 'pup-1',
+                token: 'tok',
+                taskId: 'task-id-77',
+                outcome: 'failure',
+                summary: '',
+                usagePct: null,
+            )
+            ->willReturn([]);
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    public function testClaudeRunnerReceivesResolvedPrompt(): void
+    {
+        $task = [
+            'id'           => 'org/repo#8',
+            'issue_number' => 8,
+            'repo'         => 'org/repo',
+            'title'        => 'Task title',
+            'body'         => 'body',
+            'labels'       => ['feature'],
+            'state'        => 'queued',
+        ];
+
+        $client = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturn(['new_task' => $task, 'throttled' => false]);
+
+        $resolvedPrompt = new Prompt('Custom resolved prompt');
+
+        $resolver = $this->createMock(PromptResolverInterface::class);
+        $resolver->method('resolve')->willReturn($resolvedPrompt);
+
+        $capturedPrompt = null;
+        $stubProcess    = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = function (
+            Prompt $prompt,
+            int $issueNumber,
+            string $title,
+            string $body,
+        ) use (
+            &$capturedPrompt,
+            $stubProcess
+): ClaudeRunner {
+            $capturedPrompt = $prompt;
+            return new ClaudeRunner(
+                prompt: $prompt,
+                issueNumber: $issueNumber,
+                title: $title,
+                body: $body,
+                process: $stubProcess,
+            );
+        };
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 1,
+            runnerFactory: $factory,
+            promptResolver: $resolver,
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertSame($resolvedPrompt, $capturedPrompt);
     }
 
     // -------------------------------------------------------------------------

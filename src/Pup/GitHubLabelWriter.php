@@ -8,7 +8,7 @@ use Github\Api\Issue\Labels;
 use Github\Client;
 use Psr\Log\LoggerInterface;
 
-final class GitHubLabelWriter
+final class GitHubLabelWriter implements GitHubLabelWriterInterface
 {
     private readonly Labels $labelsApi;
 
