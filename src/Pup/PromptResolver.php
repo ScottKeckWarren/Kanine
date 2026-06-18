@@ -8,7 +8,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use ScottKeckWarren\Kanine\ValueObject\String\Prompt;
 
-final class PromptResolver
+final class PromptResolver implements PromptResolverInterface
 {
     public const DEFAULT_PROMPT = 'You are a software developer. Work the following GitHub issue to completion.';
 
