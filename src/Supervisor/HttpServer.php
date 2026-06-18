@@ -25,6 +25,9 @@ final class HttpServer implements HttpServerInterface
         private readonly LoggerInterface $logger,
         private readonly int $statusIntervalMs = 10000,
         private readonly int $maxThrottlePollMs = 60000,
+        private readonly string $readyLabel = 'kanine: ready',
+        private readonly string $doneLabel = 'kanine: done',
+        private readonly string $failedLabel = 'kanine: failed',
     ) {
         $this->address = "{$host}:{$port}";
     }
@@ -71,6 +74,10 @@ final class HttpServer implements HttpServerInterface
 
         if ($method === 'POST' && preg_match('#^/pups/([^/]+)/poll$#', $path, $matches)) {
             return $this->handlePoll($request, $matches[1]);
+        }
+
+        if ($method === 'POST' && preg_match('#^/tasks/([^/]+)/complete$#', $path, $matches)) {
+            return $this->handleTaskComplete($request, $matches[1]);
         }
 
         return $this->jsonResponse(404, ['error' => 'Not found']);
@@ -160,6 +167,76 @@ final class HttpServer implements HttpServerInterface
         }
 
         return $this->jsonResponse(200, ['new_task' => $newTask]);
+    }
+
+    private function handleTaskComplete(ServerRequestInterface $request, string $taskId): Response
+    {
+        $token = $this->extractBearerToken($request);
+
+        if ($token === null) {
+            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+        }
+
+        $body = (string) $request->getBody();
+
+        try {
+            $data = $body !== ''
+                ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+        } catch (JsonException $e) {
+            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+        }
+
+        $data  = is_array($data) ? $data : [];
+        $pupId = $data['pup_id'] ?? null;
+
+        if (!is_string($pupId) || $pupId === '') {
+            return $this->jsonResponse(422, ['error' => 'pup_id is required']);
+        }
+
+        if (!$this->pupRegistry->validate(pupId: $pupId, token: $token)) {
+            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+        }
+
+        $task = $this->taskQueue->find($taskId);
+
+        if ($task === null) {
+            return $this->jsonResponse(404, ['error' => "Unknown task: {$taskId}"]);
+        }
+
+        $assignedPupId = $this->taskQueue->getAssignedPupId($taskId);
+
+        if ($assignedPupId !== $pupId) {
+            return $this->jsonResponse(403, ['error' => 'Forbidden']);
+        }
+
+        $outcome = $data['outcome'] ?? null;
+
+        if ($outcome !== 'success' && $outcome !== 'failure') {
+            return $this->jsonResponse(422, ['error' => "Invalid outcome: {$outcome}"]);
+        }
+
+        if ($outcome === 'success') {
+            $this->taskQueue->complete($taskId);
+            $labelActions = [
+                ['remove' => $this->readyLabel],
+                ['add'    => $this->doneLabel],
+            ];
+        } else {
+            $this->taskQueue->fail($taskId);
+            $labelActions = [
+                ['remove' => $this->readyLabel],
+                ['add'    => $this->failedLabel],
+            ];
+        }
+
+        $this->taskQueue->unassignTask($taskId);
+        $this->pupRegistry->unassign(pupId: $pupId);
+        $this->pupRegistry->updateStatus(pupId: $pupId, status: PupStatus::Idle);
+
+        $this->logger->info("Pup {$pupId} now idle after completing task {$taskId}");
+
+        return $this->jsonResponse(200, ['label_actions' => $labelActions]);
     }
 
     private function extractBearerToken(ServerRequestInterface $request): ?string
