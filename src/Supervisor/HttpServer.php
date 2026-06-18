@@ -16,6 +16,7 @@ use ScottKeckWarren\Kanine\Domain\PupStatus;
 final class HttpServer implements HttpServerInterface
 {
     private readonly string $address;
+    private bool $wasThrottled = false;
 
     public function __construct(
         private readonly string $host,
@@ -23,6 +24,7 @@ final class HttpServer implements HttpServerInterface
         private readonly TaskQueue $taskQueue,
         private readonly PupRegistry $pupRegistry,
         private readonly LoggerInterface $logger,
+        private readonly UsageTracker $usageTracker = new UsageTracker(),
         private readonly int $statusIntervalMs = 10000,
         private readonly int $maxThrottlePollMs = 60000,
         private readonly string $readyLabel = 'kanine: ready',
@@ -126,10 +128,12 @@ final class HttpServer implements HttpServerInterface
     private function handlePoll(ServerRequestInterface $request, string $pupId): Response
     {
         $body = (string) $request->getBody();
+        $data = [];
 
         if ($body !== '') {
             try {
-                json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
+                $decoded = json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
+                $data    = is_array($decoded) ? $decoded : [];
             } catch (JsonException $e) {
                 return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
             }
@@ -147,6 +151,26 @@ final class HttpServer implements HttpServerInterface
         if ($token === null || !$this->pupRegistry->validate(pupId: $pupId, token: $token)) {
             $this->logger->info("Unauthorized poll attempt for pup {$pupId}");
             return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+        }
+
+        $usagePct = isset($data['usage_pct']) && is_float($data['usage_pct']) ? $data['usage_pct'] : null;
+
+        if ($usagePct !== null) {
+            $this->usageTracker->record($usagePct);
+        }
+
+        if ($this->usageTracker->isThrottled()) {
+            if (!$this->wasThrottled) {
+                $this->logger->warning("UsageTracker throttle activated — usage at {$this->usageTracker->usagePct()}%");
+                $this->wasThrottled = true;
+            }
+
+            return $this->jsonResponse(200, ['new_task' => null, 'throttled' => true]);
+        }
+
+        if ($this->wasThrottled) {
+            $this->logger->info("UsageTracker throttle reset — usage at {$this->usageTracker->usagePct()}%");
+            $this->wasThrottled = false;
         }
 
         $newTask = null;
@@ -170,7 +194,7 @@ final class HttpServer implements HttpServerInterface
             }
         }
 
-        return $this->jsonResponse(200, ['new_task' => $newTask]);
+        return $this->jsonResponse(200, ['new_task' => $newTask, 'throttled' => false]);
     }
 
     private function handleTaskComplete(ServerRequestInterface $request, string $taskId): Response
