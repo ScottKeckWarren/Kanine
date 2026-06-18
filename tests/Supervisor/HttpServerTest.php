@@ -12,12 +12,14 @@ use ScottKeckWarren\Kanine\Domain\TaskState;
 use ScottKeckWarren\Kanine\Supervisor\HttpServer;
 use ScottKeckWarren\Kanine\Supervisor\PupRegistry;
 use ScottKeckWarren\Kanine\Supervisor\TaskQueue;
+use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 
 final class HttpServerTest extends TestCase
 {
     private LoggerInterface $logger;
     private TaskQueue $queue;
     private PupRegistry $registry;
+    private UsageTracker $usageTracker;
     private HttpServer $server;
 
     public function testHttpServerIsInstantiable(): void
@@ -621,6 +623,144 @@ final class HttpServerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    // -------------------------------------------------------------------------
+    // UsageTracker throttle integration
+    // -------------------------------------------------------------------------
+
+    public function testPollRecordsUsagePct(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/poll',
+            '{"usage_pct":95.0}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(95.0, $this->usageTracker->usagePct());
+    }
+
+    public function testNullUsagePctIgnored(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $this->usageTracker->record(95.0);
+
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/poll',
+            '{"usage_pct":null}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(95.0, $this->usageTracker->usagePct());
+    }
+
+    public function testThrottleResetLoggedOnce(): void
+    {
+        $this->usageTracker->record(95.0);
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $infoMessages = [];
+        $this->logger
+            ->method('info')
+            ->willReturnCallback(function (string $message) use (&$infoMessages): void {
+                $infoMessages[] = $message;
+            });
+
+        $throttledRequest = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $this->server->handle($throttledRequest);
+
+        $this->usageTracker->record(50.0);
+
+        $normalRequest = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $this->server->handle($normalRequest);
+        $this->server->handle($normalRequest);
+
+        $resetMessages = array_filter($infoMessages, fn(string $m) => str_contains($m, 'throttle'));
+        $this->assertCount(1, $resetMessages);
+    }
+
+    public function testThrottleWarningLoggedOnce(): void
+    {
+        $this->usageTracker->record(95.0);
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $warningCount = 0;
+        $this->logger
+            ->method('warning')
+            ->willReturnCallback(function () use (&$warningCount): void {
+                $warningCount++;
+            });
+
+        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $this->server->handle($request);
+        $this->server->handle($request);
+        $this->server->handle($request);
+
+        $this->assertSame(1, $warningCount);
+    }
+
+    public function testPollNotThrottledAssignsTask(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 42,
+            repo: 'org/repo',
+            title: 'Fix bug',
+            body: 'details',
+            labels: [],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+
+        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame('task-1', $body['new_task']['id']);
+        $this->assertFalse($body['throttled']);
+    }
+
+    public function testPollThrottledSkipsQueue(): void
+    {
+        $this->usageTracker->record(95.0);
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task  = new Task(
+            id: 'task-1',
+            issueNumber: 42,
+            repo: 'org/repo',
+            title: 'Fix bug',
+            body: 'details',
+            labels: [],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+
+        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $this->server->handle($request);
+
+        $this->assertNotNull($this->queue->dequeue());
+    }
+
+    public function testPollThrottledReturnsNullTask(): void
+    {
+        $this->usageTracker->record(95.0);
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertNull($body['new_task']);
+        $this->assertTrue($body['throttled']);
+    }
+
     public function testCompleteLogsIdleMessage(): void
     {
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
@@ -659,15 +799,17 @@ final class HttpServerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->logger   = $this->createMock(LoggerInterface::class);
-        $this->queue    = new TaskQueue();
-        $this->registry = new PupRegistry();
-        $this->server   = new HttpServer(
+        $this->logger       = $this->createMock(LoggerInterface::class);
+        $this->queue        = new TaskQueue();
+        $this->registry     = new PupRegistry();
+        $this->usageTracker = new UsageTracker();
+        $this->server       = new HttpServer(
             host: '127.0.0.1',
             port: 3737,
             taskQueue: $this->queue,
             pupRegistry: $this->registry,
             logger: $this->logger,
+            usageTracker: $this->usageTracker,
             readyLabel: 'kanine: ready',
             doneLabel: 'kanine: done',
             failedLabel: 'kanine: failed',
