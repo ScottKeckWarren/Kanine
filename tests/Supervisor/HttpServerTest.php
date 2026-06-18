@@ -246,6 +246,417 @@ final class HttpServerTest extends TestCase
         $this->assertSame('INVALID_JSON', $body['code']);
     }
 
+    // -------------------------------------------------------------------------
+    // POST /tasks/{id}/complete
+    // -------------------------------------------------------------------------
+
+    public function testCompleteReturns401ForMissingToken(): void
+    {
+        $request  = $this->makeRequest('POST', '/tasks/task-1/complete', '{"pup_id":"pup-1","outcome":"success"}');
+        $response = $this->server->handle($request);
+
+        $this->assertSame(401, $response->getStatusCode());
+    }
+
+    public function testCompleteReturns404ForUnknownTask(): void
+    {
+        $token    = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/unknown-task/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    public function testCompleteReturns403ForWrongPup(): void
+    {
+        $token1 = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $token2 = $this->registry->register(pupId: 'pup-2', hostname: 'host-2');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-2","outcome":"success"}',
+            "Bearer {$token2}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(403, $response->getStatusCode());
+    }
+
+    public function testCompleteSuccessReturnsRemoveReadyAndAddDoneLabelActions(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            [['remove' => 'kanine: ready'], ['add' => 'kanine: done']],
+            $body['label_actions'],
+        );
+    }
+
+    public function testCompleteSuccessSetsTaskStateToComplete(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(TaskState::Complete, $this->queue->find('task-1')->state);
+    }
+
+    public function testCompleteSuccessSetsPupToIdle(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+        $this->registry->updateStatus(pupId: 'pup-1', status: \ScottKeckWarren\Kanine\Domain\PupStatus::Working);
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(\ScottKeckWarren\Kanine\Domain\PupStatus::Idle, $this->registry->find('pup-1')->status);
+    }
+
+    public function testCompleteSuccessClearsPupAssignedTaskId(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertNull($this->registry->find('pup-1')->assignedTaskId);
+    }
+
+    public function testCompleteFailureReturnsRemoveReadyAndAddFailedLabelActions(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"failure"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            [['remove' => 'kanine: ready'], ['add' => 'kanine: failed']],
+            $body['label_actions'],
+        );
+    }
+
+    public function testCompleteFailureSetsTaskStateToFailed(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"failure"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(TaskState::Failed, $this->queue->find('task-1')->state);
+    }
+
+    public function testCompleteFailureSetsPupToIdle(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+        $this->registry->updateStatus(pupId: 'pup-1', status: \ScottKeckWarren\Kanine\Domain\PupStatus::Working);
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"failure"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(\ScottKeckWarren\Kanine\Domain\PupStatus::Idle, $this->registry->find('pup-1')->status);
+    }
+
+    public function testCompleteInvalidOutcomeReturns422(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"invalid-outcome"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testCompleteMissingOutcomeReturns422(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testCompleteWithUsagePctAcceptedWithNoSideEffects(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success","usage_pct":42.5}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testCompleteWithNullUsagePctAccepted(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success","usage_pct":null}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testCompleteLogsIdleMessage(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $logged = [];
+        $this->logger
+            ->expects($this->atLeastOnce())
+            ->method('info')
+            ->willReturnCallback(function (string $message) use (&$logged): void {
+                $logged[] = $message;
+            });
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertContains('Pup pup-1 now idle after completing task task-1', $logged);
+    }
+
     protected function setUp(): void
     {
         $this->logger   = $this->createMock(LoggerInterface::class);
@@ -257,6 +668,9 @@ final class HttpServerTest extends TestCase
             taskQueue: $this->queue,
             pupRegistry: $this->registry,
             logger: $this->logger,
+            readyLabel: 'kanine: ready',
+            doneLabel: 'kanine: done',
+            failedLabel: 'kanine: failed',
         );
     }
 

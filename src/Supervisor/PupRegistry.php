@@ -76,4 +76,21 @@ final class PupRegistry
             assignedTaskId: $taskId,
         );
     }
+
+    public function unassign(string $pupId): void
+    {
+        $existing = $this->find($pupId);
+
+        if ($existing === null) {
+            return;
+        }
+
+        $this->pups[$pupId] = new Pup(
+            id: $existing->id,
+            hostname: $existing->hostname,
+            token: $existing->token,
+            status: $existing->status,
+            assignedTaskId: null,
+        );
+    }
 }
