@@ -11,7 +11,6 @@ use ScottKeckWarren\Kanine\Config\ConfigLoader;
 use ScottKeckWarren\Kanine\Config\Configuration;
 use ScottKeckWarren\Kanine\Console\Application;
 use ScottKeckWarren\Kanine\Console\Command\InitCommand;
-use ScottKeckWarren\Kanine\Console\Command\PupCommand;
 use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
 use ScottKeckWarren\Kanine\GitHub\GitHubClient;
 use ScottKeckWarren\Kanine\GitHub\IssueLoader;
@@ -35,13 +34,13 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
         mkdir($logDir, 0755, true);
     }
 
-    $logger = (new LoggerFactory())->create(logFile: $logFile);
-    $app    = new Application($logger);
+    $logger        = (new LoggerFactory())->create(logFile: $logFile);
+    $supervisorUrl = getenv('KANINE_SUPERVISOR_URL') ?: 'http://localhost:3737';
+    $pupClient     = new PupClient(baseUrl: $supervisorUrl, guzzle: new Client());
+    $basePath      = (string) getcwd();
+    $app           = new Application($logger, $config, $pupClient, $basePath);
 
     $_SERVER['argv'] = array_values(array_filter($_SERVER['argv'], fn($a) => $a !== '--pup'));
-    $supervisorUrl   = getenv('KANINE_SUPERVISOR_URL') ?: 'http://localhost:3737';
-    $pupClient       = new PupClient(baseUrl: $supervisorUrl, guzzle: new Client());
-    $app->add(new PupCommand(pupClient: $pupClient, logger: $logger));
     $app->setDefaultCommand('pup', isSingleCommand: true);
 } else {
     // Load config for logger setup; ServeCommand will re-load after optional wizard.
