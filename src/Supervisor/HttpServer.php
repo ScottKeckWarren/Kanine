@@ -24,12 +24,12 @@ final class HttpServer implements HttpServerInterface
         private readonly TaskQueue $taskQueue,
         private readonly PupRegistry $pupRegistry,
         private readonly LoggerInterface $logger,
-        private readonly UsageTracker $usageTracker = new UsageTracker(),
         private readonly int $statusIntervalMs = 10000,
         private readonly int $maxThrottlePollMs = 60000,
         private readonly string $readyLabel = 'kanine: ready',
         private readonly string $doneLabel = 'kanine: done',
         private readonly string $failedLabel = 'kanine: failed',
+        private readonly ?UsageTracker $usageTracker = null,
     ) {
         $this->address = "{$host}:{$port}";
     }
@@ -155,11 +155,11 @@ final class HttpServer implements HttpServerInterface
 
         $usagePct = isset($data['usage_pct']) && is_float($data['usage_pct']) ? $data['usage_pct'] : null;
 
-        if ($usagePct !== null) {
+        if ($usagePct !== null && $this->usageTracker !== null) {
             $this->usageTracker->record($usagePct);
         }
 
-        if ($this->usageTracker->isThrottled()) {
+        if ($this->usageTracker !== null && $this->usageTracker->isThrottled()) {
             if (!$this->wasThrottled) {
                 $this->logger->warning("UsageTracker throttle activated — usage at {$this->usageTracker->usagePct()}%");
                 $this->wasThrottled = true;
@@ -169,7 +169,8 @@ final class HttpServer implements HttpServerInterface
         }
 
         if ($this->wasThrottled) {
-            $this->logger->info("UsageTracker throttle reset — usage at {$this->usageTracker->usagePct()}%");
+            $pct = $this->usageTracker !== null ? $this->usageTracker->usagePct() : 0.0;
+            $this->logger->info("UsageTracker throttle reset — usage at {$pct}%");
             $this->wasThrottled = false;
         }
 
@@ -242,6 +243,11 @@ final class HttpServer implements HttpServerInterface
 
         if ($outcome !== 'success' && $outcome !== 'failure') {
             return $this->jsonResponse(422, ['error' => "Invalid outcome: {$outcome}"]);
+        }
+
+        $usagePct = $data['usage_pct'] ?? null;
+        if ($this->usageTracker !== null && is_numeric($usagePct)) {
+            $this->usageTracker->record((float) $usagePct);
         }
 
         if ($outcome === 'success') {

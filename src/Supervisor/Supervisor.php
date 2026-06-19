@@ -10,20 +10,27 @@ use ScottKeckWarren\Kanine\GitHub\IssueLoaderInterface;
 final class Supervisor implements SupervisorInterface
 {
     private ?IssueLoaderInterface $issueLoader;
+    private HttpServerInterface $httpServer;
 
     public function __construct(
         private readonly TaskQueue $taskQueue,
         private readonly PupRegistry $pupRegistry,
-        private readonly HttpServerInterface $httpServer,
+        HttpServerInterface $httpServer,
         private readonly LoggerInterface $logger,
         ?IssueLoaderInterface $issueLoader = null,
     ) {
         $this->issueLoader = $issueLoader;
+        $this->httpServer  = $httpServer;
     }
 
     public function setIssueLoader(IssueLoaderInterface $loader): void
     {
         $this->issueLoader = $loader;
+    }
+
+    public function setHttpServer(HttpServerInterface $server): void
+    {
+        $this->httpServer = $server;
     }
 
     public function stop(): void

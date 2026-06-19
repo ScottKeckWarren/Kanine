@@ -13,4 +13,6 @@ interface SupervisorInterface
     public function stop(): void;
 
     public function setIssueLoader(IssueLoaderInterface $loader): void;
+
+    public function setHttpServer(HttpServerInterface $server): void;
 }

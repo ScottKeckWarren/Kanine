@@ -21,6 +21,7 @@ use ScottKeckWarren\Kanine\Supervisor\HttpServer;
 use ScottKeckWarren\Kanine\Supervisor\PupRegistry;
 use ScottKeckWarren\Kanine\Supervisor\Supervisor;
 use ScottKeckWarren\Kanine\Supervisor\TaskQueue;
+use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 
 $configLoader      = new ConfigLoader();
 $configInitializer = new ConfigInitializer();
@@ -79,7 +80,24 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
         );
     };
 
-    $app->add(new ServeCommand($configInitializer, $configLoader, $supervisor, $logger, issueLoaderFactory: $issueLoaderFactory));
+    $httpServerFactory = function (UsageTracker $tracker, string $doneLabel, string $failedLabel) use ($taskQueue, $pupRegistry, $logger, $config, $supervisor): void {
+        $server = new HttpServer(
+            host: $config->host,
+            port: $config->port,
+            taskQueue: $taskQueue,
+            pupRegistry: $pupRegistry,
+            logger: $logger,
+            statusIntervalMs: $config->statusIntervalMs,
+            maxThrottlePollMs: $config->maxThrottlePollMs,
+            readyLabel: $config->readyLabel,
+            doneLabel: $doneLabel,
+            failedLabel: $failedLabel,
+            usageTracker: $tracker,
+        );
+        $supervisor->setHttpServer($server);
+    };
+
+    $app->add(new ServeCommand($configInitializer, $configLoader, $supervisor, $logger, issueLoaderFactory: $issueLoaderFactory, httpServerFactory: $httpServerFactory));
     $app->add(new InitCommand($configInitializer));
     $app->setDefaultCommand('serve', isSingleCommand: true);
 }

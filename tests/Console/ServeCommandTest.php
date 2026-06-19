@@ -12,6 +12,7 @@ use ScottKeckWarren\Kanine\Config\Configuration;
 use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
 use ScottKeckWarren\Kanine\GitHub\IssueLoaderInterface;
 use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
+use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 use Symfony\Component\Console\Tester\CommandTester;
 
 final class ServeCommandTest extends TestCase
@@ -251,6 +252,112 @@ final class ServeCommandTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // UsageTracker, doneLabel, failedLabel wiring
+    // -------------------------------------------------------------------------
+
+    public function testUsageTrackerPassedToHttpServer(): void
+    {
+        $capturedTracker = null;
+
+        $httpServerFactory = function (
+            UsageTracker $tracker,
+            string $doneLabel,
+            string $failedLabel,
+        ) use (&$capturedTracker): void {
+            $capturedTracker = $tracker;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            httpServerFactory: $httpServerFactory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertInstanceOf(UsageTracker::class, $capturedTracker);
+    }
+
+    public function testDoneLabelPassedToHttpServer(): void
+    {
+        $capturedDoneLabel = null;
+
+        $httpServerFactory = function (
+            UsageTracker $tracker,
+            string $doneLabel,
+            string $failedLabel,
+        ) use (&$capturedDoneLabel): void {
+            $capturedDoneLabel = $doneLabel;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(doneLabel: 'kanine: done'),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            httpServerFactory: $httpServerFactory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertSame('kanine: done', $capturedDoneLabel);
+    }
+
+    public function testUsageTrackerConstructedWithConfiguredThreshold(): void
+    {
+        $capturedTracker = null;
+
+        $httpServerFactory = function (
+            UsageTracker $tracker,
+            string $doneLabel,
+            string $failedLabel,
+        ) use (&$capturedTracker): void {
+            $capturedTracker = $tracker;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(usageThrottlePct: 75.0),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            httpServerFactory: $httpServerFactory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertInstanceOf(UsageTracker::class, $capturedTracker);
+        $capturedTracker->record(76.0);
+        $this->assertTrue($capturedTracker->isThrottled());
+    }
+
+    public function testFailedLabelPassedToHttpServer(): void
+    {
+        $capturedFailedLabel = null;
+
+        $httpServerFactory = function (
+            UsageTracker $tracker,
+            string $doneLabel,
+            string $failedLabel,
+        ) use (&$capturedFailedLabel): void {
+            $capturedFailedLabel = $failedLabel;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(failedLabel: 'kanine: failed'),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            httpServerFactory: $httpServerFactory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertSame('kanine: failed', $capturedFailedLabel);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -262,8 +369,11 @@ final class ServeCommandTest extends TestCase
         return $initializer;
     }
 
-    private function makeConfigLoader(): ConfigLoaderInterface
-    {
+    private function makeConfigLoader(
+        string $doneLabel = 'kanine: done',
+        string $failedLabel = 'kanine: failed',
+        float $usageThrottlePct = 90.0,
+    ): ConfigLoaderInterface {
         $config = new Configuration(
             host: '127.0.0.1',
             port: 3737,
@@ -271,6 +381,9 @@ final class ServeCommandTest extends TestCase
             repositories: [],
             readyLabel: 'kanine-ready',
             logFile: null,
+            usageThrottlePct: $usageThrottlePct,
+            doneLabel: $doneLabel,
+            failedLabel: $failedLabel,
         );
 
         $loader = $this->createMock(ConfigLoaderInterface::class);
