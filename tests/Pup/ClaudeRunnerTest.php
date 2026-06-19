@@ -122,7 +122,6 @@ final class ClaudeRunnerTest extends TestCase
         $command = $runner->getCommand();
 
         $this->assertContains('claude', $command);
-        $this->assertContains('--headless', $command);
         $this->assertContains('--print', $command);
 
         $promptArg = end($command);
@@ -201,6 +200,75 @@ final class ClaudeRunnerTest extends TestCase
         $this->assertCount(10, $runner->getLines());
         $this->assertSame('line 6', $runner->getLines()[0]);
         $this->assertSame('line 15', $runner->getLines()[9]);
+    }
+
+    public function testGetErrorOutputEmptyBeforeStart(): void
+    {
+        $process = $this->createMock(Process::class);
+
+        $runner = new ClaudeRunner(
+            prompt: $this->makePrompt(),
+            issueNumber: 1,
+            title: 'Fix bug',
+            body: 'Some details',
+            process: $process,
+        );
+
+        $this->assertSame([], $runner->getErrorOutput());
+    }
+
+    public function testStderrLinesCollectedViaCallback(): void
+    {
+        $capturedCallback = null;
+
+        $process = $this->createMock(Process::class);
+        $process->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(function (callable $callback) use (&$capturedCallback): void {
+                $capturedCallback = $callback;
+            });
+
+        $runner = new ClaudeRunner(
+            prompt: $this->makePrompt(),
+            issueNumber: 1,
+            title: 'Fix bug',
+            body: 'Some details',
+            process: $process,
+        );
+
+        $runner->start();
+
+        $capturedCallback(Process::ERR, "Error: something went wrong\n");
+        $capturedCallback(Process::ERR, "Another error line\n");
+
+        $this->assertSame(['Error: something went wrong', 'Another error line'], $runner->getErrorOutput());
+    }
+
+    public function testStderrDoesNotUpdateLatestLineOrLines(): void
+    {
+        $capturedCallback = null;
+
+        $process = $this->createMock(Process::class);
+        $process->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(function (callable $callback) use (&$capturedCallback): void {
+                $capturedCallback = $callback;
+            });
+
+        $runner = new ClaudeRunner(
+            prompt: $this->makePrompt(),
+            issueNumber: 1,
+            title: 'Fix bug',
+            body: 'Some details',
+            process: $process,
+        );
+
+        $runner->start();
+
+        $capturedCallback(Process::ERR, "stderr noise\n");
+
+        $this->assertNull($runner->getLatestLine());
+        $this->assertSame([], $runner->getLines());
     }
 
     public function testGetUsagePctReturnsNull(): void

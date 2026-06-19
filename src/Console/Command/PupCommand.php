@@ -141,6 +141,14 @@ final class PupCommand extends Command
                     "Claude exited with code {$exitCode} for task #{$currentIssueNumber}",
                 );
 
+                if ($exitCode !== 0) {
+                    $errorOutput = $runner->getErrorOutput();
+
+                    if ($errorOutput !== []) {
+                        $this->logger->error('Claude stderr: ' . implode("\n", $errorOutput));
+                    }
+                }
+
                 $outcome = ($exitCode === 0) ? 'success' : 'failure';
 
                 if ($currentTaskId !== null) {
@@ -204,6 +212,7 @@ final class PupCommand extends Command
                 $currentIssueNumber = $issueNumber;
                 $currentTaskId      = $newTask['id'] ?? null;
                 $runner->start();
+                $this->logger->info('Claude command: ' . implode(' ', $runner->getCommand()));
                 $status = 'working';
 
                 $lastStatusAt = ($this->clockFn)();
