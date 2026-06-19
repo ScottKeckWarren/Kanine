@@ -701,6 +701,26 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame(90.0, $config->usageThrottlePct);
     }
 
+    public function testUsageThrottleOutOfRangeDefaultsToNinety(): void
+    {
+        $yaml = $this->buildYamlWithAgent(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            usageThrottlePct: 49,
+        );
+        $path = $this->writeYaml($yaml, 'throttle-regression.yaml');
+
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('error')
+            ->with($this->stringContains('usage_throttle_pct'));
+
+        $loader = new ConfigLoader(logger: $logger);
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(90.0, $config->usageThrottlePct);
+    }
+
     public function testUsageThrottlePctInRangeAccepted(): void
     {
         $yaml = $this->buildYamlWithAgent(
