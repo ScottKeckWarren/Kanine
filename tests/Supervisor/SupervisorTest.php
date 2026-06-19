@@ -261,6 +261,26 @@ final class SupervisorTest extends TestCase
         $this->assertNull($queue->peek());
     }
 
+    public function testSetHttpServerReplacesServerUsedOnBoot(): void
+    {
+        $originalServer     = $this->createMock(HttpServerInterface::class);
+        $replacementServer  = $this->createMock(HttpServerInterface::class);
+
+        $originalServer->expects($this->never())->method('start');
+        $replacementServer->expects($this->once())->method('start');
+        $replacementServer->method('boundAddress')->willReturn('127.0.0.1:3737');
+
+        $supervisor = new Supervisor(
+            taskQueue: new TaskQueue(),
+            pupRegistry: new PupRegistry(),
+            httpServer: $originalServer,
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $supervisor->setHttpServer($replacementServer);
+        $supervisor->boot();
+    }
+
     public function testSetIssueLoaderIsUsedOnBoot(): void
     {
         $task = new Task(

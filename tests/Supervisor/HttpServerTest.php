@@ -905,6 +905,47 @@ final class HttpServerTest extends TestCase
         $this->assertTrue($body['throttled']);
     }
 
+    public function testCompleteRecordsUsagePctInTracker(): void
+    {
+        $tracker = new UsageTracker(throttleThreshold: 90.0);
+        $server  = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: $this->queue,
+            pupRegistry: $this->registry,
+            logger: $this->logger,
+            readyLabel: 'kanine: ready',
+            doneLabel: 'kanine: done',
+            failedLabel: 'kanine: failed',
+            usageTracker: $tracker,
+        );
+
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success","usage_pct":55.0}',
+            "Bearer {$token}",
+        );
+        $server->handle($request);
+
+        $this->assertSame(55.0, $tracker->usagePct());
+    }
+
     public function testCompleteLogsIdleMessage(): void
     {
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');

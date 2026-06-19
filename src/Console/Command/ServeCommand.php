@@ -10,6 +10,7 @@ use ScottKeckWarren\Kanine\Config\ConfigLoaderInterface;
 use ScottKeckWarren\Kanine\Config\Configuration;
 use ScottKeckWarren\Kanine\GitHub\IssueLoaderInterface;
 use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
+use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -22,9 +23,13 @@ final class ServeCommand extends Command
     /** @var (callable(Configuration, LoggerInterface): IssueLoaderInterface)|null */
     private readonly mixed $issueLoaderFactory;
 
+    /** @var (callable(UsageTracker, string, string): void)|null */
+    private readonly mixed $httpServerFactory;
+
     /**
      * @param (callable(int, callable): void)|null $signalInstaller
      * @param (callable(Configuration, LoggerInterface): IssueLoaderInterface)|null $issueLoaderFactory
+     * @param (callable(UsageTracker, string, string): void)|null $httpServerFactory
      */
     public function __construct(
         private readonly ConfigInitializerInterface $configInitializer,
@@ -33,6 +38,7 @@ final class ServeCommand extends Command
         private readonly LoggerInterface $logger,
         ?callable $signalInstaller = null,
         ?callable $issueLoaderFactory = null,
+        ?callable $httpServerFactory = null,
     ) {
         parent::__construct('serve');
         $this->signalInstaller    = $signalInstaller ?? static function (int $signal, callable $handler): void {
@@ -41,6 +47,7 @@ final class ServeCommand extends Command
             }
         };
         $this->issueLoaderFactory = $issueLoaderFactory;
+        $this->httpServerFactory  = $httpServerFactory;
     }
 
     protected function configure(): void
@@ -62,6 +69,11 @@ final class ServeCommand extends Command
             $output->writeln('<error>' . $e->getMessage() . '</error>');
 
             return Command::FAILURE;
+        }
+
+        if ($this->httpServerFactory !== null) {
+            $tracker = new UsageTracker($config->usageThrottlePct);
+            ($this->httpServerFactory)($tracker, $config->doneLabel, $config->failedLabel);
         }
 
         if ($this->issueLoaderFactory !== null) {
