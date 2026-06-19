@@ -44,4 +44,11 @@ final class PromptTest extends TestCase
 
         $this->assertSame('hello', $prompt->value);
     }
+
+    public function testEmptyStringThrowsRegression(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new Prompt('');
+    }
 }
