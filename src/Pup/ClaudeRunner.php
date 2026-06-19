@@ -17,6 +17,9 @@ final class ClaudeRunner
     /** @var list<string> */
     private array $lines = [];
 
+    /** @var list<string> */
+    private array $errorLines = [];
+
     private ?string $latestLine = null;
 
     public function __construct(
@@ -27,20 +30,22 @@ final class ClaudeRunner
         ?Process $process = null,
     ) {
         $input = "{$this->prompt}\n\n## Issue #{$this->issueNumber}: {$this->title}\n\n{$this->body}";
-        $this->command = ['claude', '--headless', '--print', $input];
+        $this->command = ['claude', '--print', $input];
         $this->process = $process ?? new Process($this->command);
     }
 
     public function start(): void
     {
         $this->process->start(function (string $type, string $data): void {
-            if ($type !== Process::OUT) {
-                return;
-            }
-
             $line = rtrim($data, "\n");
 
             if ($line === '') {
+                return;
+            }
+
+            if ($type === Process::ERR) {
+                $this->errorLines[] = $line;
+
                 return;
             }
 
@@ -88,6 +93,14 @@ final class ClaudeRunner
     public function getLines(): array
     {
         return $this->lines;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function getErrorOutput(): array
+    {
+        return $this->errorLines;
     }
 
     public function getUsagePct(): ?float
