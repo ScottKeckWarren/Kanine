@@ -23,13 +23,13 @@ final class ServeCommand extends Command
     /** @var (callable(Configuration, LoggerInterface): IssueLoaderInterface)|null */
     private readonly mixed $issueLoaderFactory;
 
-    /** @var (callable(UsageTracker, string, string): void)|null */
+    /** @var (callable(UsageTracker, string, string, string, string): void)|null */
     private readonly mixed $httpServerFactory;
 
     /**
      * @param (callable(int, callable): void)|null $signalInstaller
      * @param (callable(Configuration, LoggerInterface): IssueLoaderInterface)|null $issueLoaderFactory
-     * @param (callable(UsageTracker, string, string): void)|null $httpServerFactory
+     * @param (callable(UsageTracker, string, string, string, string): void)|null $httpServerFactory
      */
     public function __construct(
         private readonly ConfigInitializerInterface $configInitializer,
@@ -73,7 +73,13 @@ final class ServeCommand extends Command
 
         if ($this->httpServerFactory !== null) {
             $tracker = new UsageTracker($config->usageThrottlePct);
-            ($this->httpServerFactory)($tracker, $config->doneLabel, $config->failedLabel);
+            ($this->httpServerFactory)(
+                $tracker,
+                $config->doneLabel,
+                $config->failedLabel,
+                $config->architectLabel,
+                $config->humanFeedbackLabel,
+            );
         }
 
         if ($this->issueLoaderFactory !== null) {

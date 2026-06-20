@@ -480,6 +480,39 @@ final class HttpServerTest extends TestCase
         );
     }
 
+    public function testCompleteSuccessWithArchitectLabelReturnsHumanFeedbackNeededLabelAction(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: ['kanine: ready', 'architect'],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            [['remove' => 'kanine: ready'], ['add' => 'human feedback needed']],
+            $body['label_actions'],
+        );
+    }
+
     public function testCompleteSuccessSetsTaskStateToComplete(): void
     {
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');

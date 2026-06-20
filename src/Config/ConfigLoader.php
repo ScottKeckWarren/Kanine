@@ -13,8 +13,10 @@ final class ConfigLoader implements ConfigLoaderInterface
     private const DEFAULT_HOST               = '127.0.0.1';
     private const DEFAULT_PORT               = 3737;
     private const DEFAULT_READY_LABEL        = 'kanine: ready';
-    private const DEFAULT_DONE_LABEL         = 'kanine: done';
-    private const DEFAULT_FAILED_LABEL       = 'kanine: failed';
+    private const DEFAULT_DONE_LABEL            = 'kanine: done';
+    private const DEFAULT_FAILED_LABEL          = 'kanine: failed';
+    private const DEFAULT_ARCHITECT_LABEL       = 'architect';
+    private const DEFAULT_HUMAN_FEEDBACK_LABEL  = 'human feedback needed';
     private const DEFAULT_TOKEN_ENV          = 'GITHUB_TOKEN';
     private const DEFAULT_STATUS_INTERVAL_MS  = 10000;
     private const DEFAULT_USAGE_THROTTLE_PCT  = 90.0;
@@ -111,6 +113,8 @@ final class ConfigLoader implements ConfigLoaderInterface
             maxThrottlePollMs: (int) ($agent['max_throttle_poll_ms'] ?? self::DEFAULT_MAX_THROTTLE_POLL_MS),
             doneLabel: (string) ($labels['done'] ?? self::DEFAULT_DONE_LABEL),
             failedLabel: (string) ($labels['failed'] ?? self::DEFAULT_FAILED_LABEL),
+            architectLabel: (string) ($labels['architect'] ?? self::DEFAULT_ARCHITECT_LABEL),
+            humanFeedbackLabel: (string) ($labels['human_feedback'] ?? self::DEFAULT_HUMAN_FEEDBACK_LABEL),
         );
 
         $this->validate($config, $tokenEnv);
@@ -189,6 +193,8 @@ final class ConfigLoader implements ConfigLoaderInterface
             maxThrottlePollMs: self::DEFAULT_MAX_THROTTLE_POLL_MS,
             doneLabel: self::DEFAULT_DONE_LABEL,
             failedLabel: self::DEFAULT_FAILED_LABEL,
+            architectLabel: self::DEFAULT_ARCHITECT_LABEL,
+            humanFeedbackLabel: self::DEFAULT_HUMAN_FEEDBACK_LABEL,
         );
     }
 }
