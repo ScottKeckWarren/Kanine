@@ -21,6 +21,8 @@ final readonly class Configuration
         public int $maxThrottlePollMs = 60000,
         public string $doneLabel = 'kanine: done',
         public string $failedLabel = 'kanine: failed',
+        public string $architectLabel = 'architect',
+        public string $humanFeedbackLabel = 'human feedback needed',
     ) {
     }
 }

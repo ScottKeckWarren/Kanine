@@ -80,7 +80,7 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
         );
     };
 
-    $httpServerFactory = function (UsageTracker $tracker, string $doneLabel, string $failedLabel) use ($taskQueue, $pupRegistry, $logger, $config, $supervisor): void {
+    $httpServerFactory = function (UsageTracker $tracker, string $doneLabel, string $failedLabel, string $architectLabel, string $humanFeedbackLabel) use ($taskQueue, $pupRegistry, $logger, $config, $supervisor): void {
         $server = new HttpServer(
             host: $config->host,
             port: $config->port,
@@ -92,6 +92,8 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
             readyLabel: $config->readyLabel,
             doneLabel: $doneLabel,
             failedLabel: $failedLabel,
+            architectLabel: $architectLabel,
+            humanFeedbackLabel: $humanFeedbackLabel,
             usageTracker: $tracker,
         );
         $supervisor->setHttpServer($server);

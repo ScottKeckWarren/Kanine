@@ -357,6 +357,59 @@ final class ServeCommandTest extends TestCase
         $this->assertSame('kanine: failed', $capturedFailedLabel);
     }
 
+    public function testArchitectLabelPassedToHttpServer(): void
+    {
+        $capturedArchitectLabel = null;
+
+        $httpServerFactory = function (
+            UsageTracker $tracker,
+            string $doneLabel,
+            string $failedLabel,
+            string $architectLabel,
+        ) use (&$capturedArchitectLabel): void {
+            $capturedArchitectLabel = $architectLabel;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(architectLabel: 'architect'),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            httpServerFactory: $httpServerFactory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertSame('architect', $capturedArchitectLabel);
+    }
+
+    public function testHumanFeedbackLabelPassedToHttpServer(): void
+    {
+        $capturedHumanFeedbackLabel = null;
+
+        $httpServerFactory = function (
+            UsageTracker $tracker,
+            string $doneLabel,
+            string $failedLabel,
+            string $architectLabel,
+            string $humanFeedbackLabel,
+        ) use (&$capturedHumanFeedbackLabel): void {
+            $capturedHumanFeedbackLabel = $humanFeedbackLabel;
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(humanFeedbackLabel: 'human feedback needed'),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            httpServerFactory: $httpServerFactory,
+        );
+
+        (new CommandTester($command))->execute([]);
+
+        $this->assertSame('human feedback needed', $capturedHumanFeedbackLabel);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -373,6 +426,8 @@ final class ServeCommandTest extends TestCase
         string $doneLabel = 'kanine: done',
         string $failedLabel = 'kanine: failed',
         float $usageThrottlePct = 90.0,
+        string $architectLabel = 'architect',
+        string $humanFeedbackLabel = 'human feedback needed',
     ): ConfigLoaderInterface {
         $config = new Configuration(
             host: '127.0.0.1',
@@ -384,6 +439,8 @@ final class ServeCommandTest extends TestCase
             usageThrottlePct: $usageThrottlePct,
             doneLabel: $doneLabel,
             failedLabel: $failedLabel,
+            architectLabel: $architectLabel,
+            humanFeedbackLabel: $humanFeedbackLabel,
         );
 
         $loader = $this->createMock(ConfigLoaderInterface::class);

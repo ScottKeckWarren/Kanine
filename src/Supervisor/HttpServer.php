@@ -29,6 +29,8 @@ final class HttpServer implements HttpServerInterface
         private readonly string $readyLabel = 'kanine: ready',
         private readonly string $doneLabel = 'kanine: done',
         private readonly string $failedLabel = 'kanine: failed',
+        private readonly string $architectLabel = 'architect',
+        private readonly string $humanFeedbackLabel = 'human feedback needed',
         private readonly ?UsageTracker $usageTracker = null,
     ) {
         $this->address = "{$host}:{$port}";
@@ -252,9 +254,11 @@ final class HttpServer implements HttpServerInterface
 
         if ($outcome === 'success') {
             $this->taskQueue->complete($taskId);
-            $labelActions = [
+            $isArchitectTask = in_array($this->architectLabel, $task->labels, strict: true);
+            $completionLabel = $isArchitectTask ? $this->humanFeedbackLabel : $this->doneLabel;
+            $labelActions    = [
                 ['remove' => $this->readyLabel],
-                ['add'    => $this->doneLabel],
+                ['add'    => $completionLabel],
             ];
         } else {
             $this->taskQueue->fail($taskId);
