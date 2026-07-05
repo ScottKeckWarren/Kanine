@@ -58,7 +58,7 @@ final class V02SmokeTest extends TestCase
 
         // Poll — pup should receive the task
         $pollResponse = $this->server->handle(
-            $this->makeRequest('POST', '/pups/v02-pup-1/poll', '', "Bearer {$token}"),
+            $this->makeRequest('GET', '/pups/v02-pup-1/poll', '', "Bearer {$token}"),
         );
 
         $this->assertSame(200, $pollResponse->getStatusCode());
@@ -149,7 +149,7 @@ final class V02SmokeTest extends TestCase
         $queue->enqueue($task);
 
         $response = $server->handle(
-            $this->makeRequest('POST', '/pups/throttle-pup/poll', '', "Bearer {$token}"),
+            $this->makeRequest('GET', '/pups/throttle-pup/poll', '', "Bearer {$token}"),
         );
 
         $this->assertSame(200, $response->getStatusCode());

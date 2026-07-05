@@ -15,6 +15,7 @@ final class PupRegistry
     public function register(string $pupId, string $hostname): string
     {
         $token = bin2hex(random_bytes(32));
+        $now   = new \DateTimeImmutable();
 
         $this->pups[$pupId] = new Pup(
             id: $pupId,
@@ -22,6 +23,8 @@ final class PupRegistry
             token: $token,
             status: PupStatus::Idle,
             assignedTaskId: null,
+            lastHeartbeatAt: $now,
+            registeredAt: $now,
         );
 
         return $token;
@@ -57,6 +60,8 @@ final class PupRegistry
             token: $existing->token,
             status: $status,
             assignedTaskId: $existing->assignedTaskId,
+            lastHeartbeatAt: $existing->lastHeartbeatAt,
+            registeredAt: $existing->registeredAt,
         );
     }
 
@@ -85,6 +90,8 @@ final class PupRegistry
             token: $existing->token,
             status: $existing->status,
             assignedTaskId: $taskId,
+            lastHeartbeatAt: $existing->lastHeartbeatAt,
+            registeredAt: $existing->registeredAt,
         );
     }
 
@@ -102,6 +109,64 @@ final class PupRegistry
             token: $existing->token,
             status: $existing->status,
             assignedTaskId: null,
+            lastHeartbeatAt: $existing->lastHeartbeatAt,
+            registeredAt: $existing->registeredAt,
         );
+    }
+
+    /**
+     * @return list<Pup>
+     */
+    public function getIdlePups(): array
+    {
+        return array_values(
+            array_filter(
+                $this->pups,
+                fn (Pup $pup): bool => $pup->status === PupStatus::Idle,
+            )
+        );
+    }
+
+    public function updateHeartbeat(string $pupId): void
+    {
+        $existing = $this->find($pupId);
+
+        if ($existing === null) {
+            return;
+        }
+
+        $this->pups[$pupId] = new Pup(
+            id: $existing->id,
+            hostname: $existing->hostname,
+            token: $existing->token,
+            status: $existing->status,
+            assignedTaskId: $existing->assignedTaskId,
+            lastHeartbeatAt: new \DateTimeImmutable(),
+            registeredAt: $existing->registeredAt,
+        );
+    }
+
+    public function markInactive(string $pupId): void
+    {
+        $existing = $this->find($pupId);
+
+        if ($existing === null) {
+            return;
+        }
+
+        $this->pups[$pupId] = new Pup(
+            id: $existing->id,
+            hostname: $existing->hostname,
+            token: $existing->token,
+            status: PupStatus::Inactive,
+            assignedTaskId: null,
+            lastHeartbeatAt: $existing->lastHeartbeatAt,
+            registeredAt: $existing->registeredAt,
+        );
+    }
+
+    public function remove(string $pupId): void
+    {
+        unset($this->pups[$pupId]);
     }
 }

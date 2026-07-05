@@ -279,7 +279,7 @@ final class PupClientTest extends TestCase
 
     public function testPollRetriesOnConnectException(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -306,7 +306,7 @@ final class PupClientTest extends TestCase
 
     public function testPollBackoffDoublesDelayOnSuccessiveFailures(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -333,7 +333,7 @@ final class PupClientTest extends TestCase
 
     public function testPollBackoffCapsDelayAt30Seconds(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         // Enough failures to push delay beyond 30s: 1, 2, 4, 8, 16, 32 → capped at 30
         $exceptions = [];
@@ -362,7 +362,7 @@ final class PupClientTest extends TestCase
 
     public function testPollLogsWarningOnConnectException(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -396,7 +396,7 @@ final class PupClientTest extends TestCase
 
     public function testPollBackoffResetsToOneAfterSuccessfulPoll(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),

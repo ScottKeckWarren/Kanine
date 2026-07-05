@@ -12,6 +12,8 @@ final readonly class Pup
         public string $token,
         public PupStatus $status,
         public ?string $assignedTaskId,
+        public ?\DateTimeImmutable $lastHeartbeatAt = null,
+        public ?\DateTimeImmutable $registeredAt = null,
     ) {
     }
 }
