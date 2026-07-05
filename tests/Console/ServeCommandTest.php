@@ -411,6 +411,96 @@ final class ServeCommandTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // T021/T022: BoardRenderer wiring
+    // -------------------------------------------------------------------------
+
+    public function testServeCommandCanBeConstructedWithBoardRenderer(): void
+    {
+        $boardRenderer = new \ScottKeckWarren\Kanine\Board\BoardRenderer([]);
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            boardRenderer: $boardRenderer,
+        );
+
+        $this->assertInstanceOf(ServeCommand::class, $command);
+    }
+
+    public function testServeCommandStillBootsSupervisorWithBoardRenderer(): void
+    {
+        $boardRenderer = new \ScottKeckWarren\Kanine\Board\BoardRenderer([]);
+
+        $supervisor = $this->createMock(SupervisorInterface::class);
+        $supervisor->expects($this->once())->method('boot');
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $supervisor,
+            logger: $this->createMock(LoggerInterface::class),
+            boardRenderer: $boardRenderer,
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+    }
+
+    // -------------------------------------------------------------------------
+    // T031: Dispatcher wiring
+    // -------------------------------------------------------------------------
+
+    public function testServeCommandCanBeConstructedWithDispatcher(): void
+    {
+        $dispatcher = new \ScottKeckWarren\Kanine\Supervisor\Dispatcher(
+            new \ScottKeckWarren\Kanine\Supervisor\IssueStore(),
+            new \ScottKeckWarren\Kanine\Supervisor\PupRegistry(),
+        );
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            dispatcher: $dispatcher,
+        );
+
+        $this->assertInstanceOf(ServeCommand::class, $command);
+    }
+
+    public function testServeCommandGetDispatcherReturnsInjectedDispatcher(): void
+    {
+        $dispatcher = new \ScottKeckWarren\Kanine\Supervisor\Dispatcher(
+            new \ScottKeckWarren\Kanine\Supervisor\IssueStore(),
+            new \ScottKeckWarren\Kanine\Supervisor\PupRegistry(),
+        );
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            dispatcher: $dispatcher,
+        );
+
+        $this->assertSame($dispatcher, $command->getDispatcher());
+    }
+
+    public function testServeCommandGetDispatcherReturnsNullByDefault(): void
+    {
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $this->assertNull($command->getDispatcher());
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

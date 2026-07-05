@@ -76,8 +76,12 @@ final class HttpServer implements HttpServerInterface
             return $this->handleRegister($request);
         }
 
-        if ($method === 'POST' && preg_match('#^/pups/([^/]+)/poll$#', $path, $matches)) {
+        if ($method === 'GET' && preg_match('#^/pups/([^/]+)/poll$#', $path, $matches)) {
             return $this->handlePoll($request, $matches[1]);
+        }
+
+        if ($method === 'DELETE' && preg_match('#^/pups/([^/]+)$#', $path, $matches)) {
+            return $this->handleDeregister($matches[1]);
         }
 
         if ($method === 'POST' && preg_match('#^/tasks/([^/]+)/complete$#', $path, $matches)) {
@@ -167,7 +171,7 @@ final class HttpServer implements HttpServerInterface
                 $this->wasThrottled = true;
             }
 
-            return $this->jsonResponse(200, ['new_task' => null, 'throttled' => true]);
+            return $this->jsonResponse(200, ['new_task' => null, 'throttled' => true, 'pendingAnswers' => []]);
         }
 
         if ($this->wasThrottled) {
@@ -175,6 +179,8 @@ final class HttpServer implements HttpServerInterface
             $this->logger->info("UsageTracker throttle reset — usage at {$pct}%");
             $this->wasThrottled = false;
         }
+
+        $this->pupRegistry->updateHeartbeat($pupId);
 
         $newTask = null;
 
@@ -197,7 +203,20 @@ final class HttpServer implements HttpServerInterface
             }
         }
 
-        return $this->jsonResponse(200, ['new_task' => $newTask, 'throttled' => false]);
+        return $this->jsonResponse(200, ['new_task' => $newTask, 'throttled' => false, 'pendingAnswers' => []]);
+    }
+
+    private function handleDeregister(string $pupId): Response
+    {
+        $pup = $this->pupRegistry->find($pupId);
+
+        if ($pup === null) {
+            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+        }
+
+        $this->pupRegistry->remove($pupId);
+
+        return $this->jsonResponse(200, ['ok' => true]);
     }
 
     private function handleTaskComplete(ServerRequestInterface $request, string $taskId): Response

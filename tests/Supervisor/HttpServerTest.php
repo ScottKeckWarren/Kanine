@@ -83,7 +83,7 @@ final class HttpServerTest extends TestCase
 
     public function testHandlePollUnknownPupReturns404(): void
     {
-        $request  = $this->makeRequest('POST', '/pups/unknown-pup/poll', '', 'Bearer sometoken');
+        $request  = $this->makeRequest('GET', '/pups/unknown-pup/poll', '', 'Bearer sometoken');
         $response = $this->server->handle($request);
 
         $this->assertSame(404, $response->getStatusCode());
@@ -93,7 +93,7 @@ final class HttpServerTest extends TestCase
     {
         $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', 'Bearer wrongtoken');
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', 'Bearer wrongtoken');
         $response = $this->server->handle($request);
 
         $this->assertSame(401, $response->getStatusCode());
@@ -103,7 +103,7 @@ final class HttpServerTest extends TestCase
     {
         $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll');
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll');
         $response = $this->server->handle($request);
 
         $this->assertSame(401, $response->getStatusCode());
@@ -112,7 +112,7 @@ final class HttpServerTest extends TestCase
     public function testHandlePollEmptyQueueReturnsNullTask(): void
     {
         $token   = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
-        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
 
         $response = $this->server->handle($request);
 
@@ -135,7 +135,7 @@ final class HttpServerTest extends TestCase
         );
         $this->queue->enqueue($task);
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $response = $this->server->handle($request);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -158,7 +158,7 @@ final class HttpServerTest extends TestCase
         );
         $this->queue->enqueue($task);
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $response = $this->server->handle($request);
 
         $body = json_decode((string) $response->getBody(), true);
@@ -180,7 +180,7 @@ final class HttpServerTest extends TestCase
         );
         $this->queue->enqueue($task);
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $response = $this->server->handle($request);
 
         $body = json_decode((string) $response->getBody(), true);
@@ -230,7 +230,7 @@ final class HttpServerTest extends TestCase
     public function testHandlePollMalformedJsonReturns400(): void
     {
         $token   = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
-        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '{broken', "Bearer {$token}");
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '{broken', "Bearer {$token}");
 
         $response = $this->server->handle($request);
 
@@ -240,7 +240,7 @@ final class HttpServerTest extends TestCase
     public function testHandlePollMalformedJsonBodyContainsInvalidJsonCode(): void
     {
         $token   = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
-        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '{broken', "Bearer {$token}");
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '{broken', "Bearer {$token}");
 
         $response = $this->server->handle($request);
 
@@ -809,7 +809,7 @@ final class HttpServerTest extends TestCase
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
 
         $request = $this->makeRequest(
-            'POST',
+            'GET',
             '/pups/pup-1/poll',
             '{"usage_pct":95.0}',
             "Bearer {$token}",
@@ -826,7 +826,7 @@ final class HttpServerTest extends TestCase
         $this->usageTracker->record(95.0);
 
         $request = $this->makeRequest(
-            'POST',
+            'GET',
             '/pups/pup-1/poll',
             '{"usage_pct":null}',
             "Bearer {$token}",
@@ -848,12 +848,12 @@ final class HttpServerTest extends TestCase
                 $infoMessages[] = $message;
             });
 
-        $throttledRequest = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $throttledRequest = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $this->server->handle($throttledRequest);
 
         $this->usageTracker->record(50.0);
 
-        $normalRequest = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $normalRequest = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $this->server->handle($normalRequest);
         $this->server->handle($normalRequest);
 
@@ -873,7 +873,7 @@ final class HttpServerTest extends TestCase
                 $warningCount++;
             });
 
-        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $this->server->handle($request);
         $this->server->handle($request);
         $this->server->handle($request);
@@ -895,7 +895,7 @@ final class HttpServerTest extends TestCase
         );
         $this->queue->enqueue($task);
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $response = $this->server->handle($request);
 
         $body = json_decode((string) $response->getBody(), true);
@@ -918,7 +918,7 @@ final class HttpServerTest extends TestCase
         );
         $this->queue->enqueue($task);
 
-        $request = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $this->server->handle($request);
 
         $this->assertNotNull($this->queue->dequeue());
@@ -929,7 +929,7 @@ final class HttpServerTest extends TestCase
         $this->usageTracker->record(95.0);
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
 
-        $request  = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
         $response = $this->server->handle($request);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -1013,6 +1013,88 @@ final class HttpServerTest extends TestCase
         $this->server->handle($request);
 
         $this->assertContains('Pup pup-1 now idle after completing task task-1', $logged);
+    }
+
+    // -------------------------------------------------------------------------
+    // T029: Poll endpoint method change (POST → GET) and heartbeat
+    // -------------------------------------------------------------------------
+
+    public function testPollEndpointIsGetMethod(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $postRequest = $this->makeRequest('POST', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $postResponse = $this->server->handle($postRequest);
+
+        $this->assertSame(404, $postResponse->getStatusCode());
+    }
+
+    public function testPollGetReturns200(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $getRequest = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $getResponse = $this->server->handle($getRequest);
+
+        $this->assertSame(200, $getResponse->getStatusCode());
+    }
+
+    public function testPollUpdatesHeartbeat(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $this->server->handle($request);
+
+        $pup = $this->registry->find('pup-1');
+        $this->assertNotNull($pup);
+        $this->assertNotNull($pup->lastHeartbeatAt);
+    }
+
+    public function testPollResponseIncludesPendingAnswers(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertArrayHasKey('pendingAnswers', $body);
+        $this->assertSame([], $body['pendingAnswers']);
+    }
+
+    // -------------------------------------------------------------------------
+    // T030: DELETE /pups/{pupId} deregister
+    // -------------------------------------------------------------------------
+
+    public function testDeregisterReturns200ForKnownPup(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest('DELETE', '/pups/pup-1', '', "Bearer {$token}");
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertTrue($body['ok']);
+    }
+
+    public function testDeregisterReturns404ForUnknownPup(): void
+    {
+        $request  = $this->makeRequest('DELETE', '/pups/unknown-id');
+        $response = $this->server->handle($request);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    public function testDeregisterRemovesPupFromRegistry(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest('DELETE', '/pups/pup-1', '', "Bearer {$token}");
+        $this->server->handle($request);
+
+        $this->assertNull($this->registry->find('pup-1'));
     }
 
     protected function setUp(): void

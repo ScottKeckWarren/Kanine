@@ -147,7 +147,7 @@ final class PupClient implements PupClientInterface
      */
     private function doPoll(string $pupId, string $token, string $status, ?float $usagePct): array
     {
-        $response = $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/poll", [
+        $response = $this->guzzle->get("{$this->baseUrl}/pups/{$pupId}/poll", [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
             ],

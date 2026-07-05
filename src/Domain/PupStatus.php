@@ -6,8 +6,9 @@ namespace ScottKeckWarren\Kanine\Domain;
 
 enum PupStatus: string
 {
-    case Idle      = 'Idle';
-    case Working   = 'Working';
+    case Idle      = 'idle';
+    case Working   = 'working';
     case Completed = 'completed';
     case Failed    = 'failed';
+    case Inactive  = 'inactive';
 }
