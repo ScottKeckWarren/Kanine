@@ -21,9 +21,9 @@ final class PupStatusTest extends TestCase
         $this->assertSame(PupStatus::Working, PupStatus::from('working'));
     }
 
-    public function testItHasExactlyFiveCases(): void
+    public function testItHasExactlySixCases(): void
     {
-        $this->assertCount(5, PupStatus::cases());
+        $this->assertCount(6, PupStatus::cases());
     }
 
     public function testInactiveCaseHasCorrectValue(): void

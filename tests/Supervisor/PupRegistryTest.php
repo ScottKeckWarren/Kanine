@@ -232,6 +232,40 @@ final class PupRegistryTest extends TestCase
         $this->assertNotNull($pup->lastHeartbeatAt);
     }
 
+    public function testGetAllActivePupsExcludesInactivePups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $this->registry->markInactive('pup-001');
+
+        $activePups = $this->registry->getAllActivePups();
+
+        $this->assertSame([], $activePups);
+    }
+
+    public function testGetAllActivePupsIncludesIdleAndWorkingPups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->register(pupId: 'pup-002', hostname: 'worker-02.local');
+        $this->registry->updateStatus(pupId: 'pup-002', status: PupStatus::Working);
+
+        $activePups = $this->registry->getAllActivePups();
+
+        $this->assertCount(2, $activePups);
+    }
+
+    public function testForceHeartbeatAtSetsCustomTime(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $knownTime = new \DateTimeImmutable('2020-01-01 00:00:00');
+
+        $this->registry->forceHeartbeatAt('pup-001', $knownTime);
+
+        $pup = $this->registry->find('pup-001');
+        $this->assertNotNull($pup);
+        $this->assertSame($knownTime->getTimestamp(), $pup->lastHeartbeatAt?->getTimestamp());
+    }
+
     protected function setUp(): void
     {
         $this->registry = new PupRegistry();

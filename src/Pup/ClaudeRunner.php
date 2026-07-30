@@ -28,10 +28,11 @@ final class ClaudeRunner
         private readonly string $title,
         private readonly string $body,
         ?Process $process = null,
+        private readonly ?string $workingDirectory = null,
     ) {
         $input = "{$this->prompt}\n\n## Issue #{$this->issueNumber}: {$this->title}\n\n{$this->body}";
         $this->command = ['claude', '--print', $input];
-        $this->process = $process ?? new Process($this->command);
+        $this->process = $process ?? new Process($this->command, $this->workingDirectory);
     }
 
     public function start(): void

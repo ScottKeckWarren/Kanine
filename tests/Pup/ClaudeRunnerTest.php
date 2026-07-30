@@ -283,6 +283,22 @@ final class ClaudeRunnerTest extends TestCase
         $this->assertNull($runner->getUsagePct());
     }
 
+    public function testWorkingDirectoryIsAcceptedAsConstructorParam(): void
+    {
+        $process = $this->createMock(Process::class);
+
+        $runner = new ClaudeRunner(
+            prompt: $this->makePrompt(),
+            issueNumber: 1,
+            title: 'Fix bug',
+            body: 'Some details',
+            process: $process,
+            workingDirectory: '/worktrees/issue-1',
+        );
+
+        $this->assertInstanceOf(ClaudeRunner::class, $runner);
+    }
+
     private function makePrompt(string $value = 'You are a helpful assistant.'): Prompt
     {
         return new Prompt($value);

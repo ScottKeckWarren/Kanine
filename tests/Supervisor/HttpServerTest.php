@@ -1097,6 +1097,317 @@ final class HttpServerTest extends TestCase
         $this->assertNull($this->registry->find('pup-1'));
     }
 
+    // -------------------------------------------------------------------------
+    // T039: POST /pups/{pupId}/status
+    // -------------------------------------------------------------------------
+
+    public function testPupStatusEndpointReturns200WithOkForWorkingStatus(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"working","message":"running"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertTrue($body['ok']);
+    }
+
+    public function testPupStatusEndpointUpdatesStatusToWorking(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"working","message":"running"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(\ScottKeckWarren\Kanine\Domain\PupStatus::Working, $this->registry->find('pup-1')->status);
+    }
+
+    public function testPupStatusEndpointUpdatesStatusToBlocked(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"blocked","message":"waiting"}',
+            "Bearer {$token}",
+        );
+        $this->server->handle($request);
+
+        $this->assertSame(\ScottKeckWarren\Kanine\Domain\PupStatus::Blocked, $this->registry->find('pup-1')->status);
+    }
+
+    public function testPupStatusEndpointWithCompleteReleasesAssignment(): void
+    {
+        $issueStore = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $issueStore->add(new \ScottKeckWarren\Kanine\Domain\Issue(
+            id: 42,
+            repo: 'owner/repo',
+            title: 'Fix bug',
+            body: 'body',
+            labels: [],
+            column: 'Backlog',
+            assignedPupId: 'pup-1',
+        ));
+
+        $server = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: $this->queue,
+            pupRegistry: $this->registry,
+            logger: $this->logger,
+            issueStore: $issueStore,
+        );
+
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"complete","message":"done"}',
+            "Bearer {$token}",
+        );
+        $server->handle($request);
+
+        $this->assertNull($issueStore->getByPupId('pup-1'));
+    }
+
+    public function testPupStatusEndpointWithFailedReleasesAssignment(): void
+    {
+        $issueStore = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $issueStore->add(new \ScottKeckWarren\Kanine\Domain\Issue(
+            id: 42,
+            repo: 'owner/repo',
+            title: 'Fix bug',
+            body: 'body',
+            labels: [],
+            column: 'Backlog',
+            assignedPupId: 'pup-1',
+        ));
+
+        $server = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: $this->queue,
+            pupRegistry: $this->registry,
+            logger: $this->logger,
+            issueStore: $issueStore,
+        );
+
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"failed","message":"oops"}',
+            "Bearer {$token}",
+        );
+        $server->handle($request);
+
+        $this->assertNull($issueStore->getByPupId('pup-1'));
+    }
+
+    public function testPupStatusEndpointReturns400ForInvalidJson(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{not valid json',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testPupStatusEndpointReturns400ForInvalidStatus(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"invalid_status"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testPupStatusEndpointReturns404ForUnknownPup(): void
+    {
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/unknown-pup/status',
+            '{"status":"working"}',
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    // -------------------------------------------------------------------------
+    // T049+T051: POST /pups/{pupId}/questions
+    // -------------------------------------------------------------------------
+
+    public function testPostQuestionReturns200ForRegisteredPup(): void
+    {
+        $server = $this->makeServerWithQuestionStore();
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/questions',
+            '{"questionId":"q-uuid-1","body":"What should I do?"}',
+        );
+        $response = $server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertTrue($body['ok']);
+    }
+
+    public function testPostQuestionReturns404ForUnknownPup(): void
+    {
+        $server  = $this->makeServerWithQuestionStore();
+        $request = $this->makeRequest(
+            'POST',
+            '/pups/unknown/questions',
+            '{"questionId":"q-1","body":"Hello?"}',
+        );
+        $response = $server->handle($request);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    public function testPostQuestionReturns400ForMissingBody(): void
+    {
+        $server = $this->makeServerWithQuestionStore();
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/questions',
+            '{"questionId":"q-1"}',
+        );
+        $response = $server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testPostQuestionReturns400ForMissingQuestionId(): void
+    {
+        $server = $this->makeServerWithQuestionStore();
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/questions',
+            '{"body":"What to do?"}',
+        );
+        $response = $server->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testPostQuestionReturns409ForDuplicateQuestionId(): void
+    {
+        $server = $this->makeServerWithQuestionStore();
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $payload = '{"questionId":"q-dup","body":"Duplicate question"}';
+
+        $request = $this->makeRequest('POST', '/pups/pup-1/questions', $payload);
+        $server->handle($request);
+
+        $response = $server->handle($request);
+
+        $this->assertSame(409, $response->getStatusCode());
+    }
+
+    // -------------------------------------------------------------------------
+    // T052: GET /pups/{pupId}/poll — wire QuestionStore::popAnswered
+    // -------------------------------------------------------------------------
+
+    public function testPollReturnsPendingAnswers(): void
+    {
+        $questionStore = new \ScottKeckWarren\Kanine\Supervisor\QuestionStore();
+        $server = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: $this->queue,
+            pupRegistry: $this->registry,
+            logger: $this->logger,
+            questionStore: $questionStore,
+        );
+
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $q = new \ScottKeckWarren\Kanine\Domain\Question(
+            id: 'q-poll-1',
+            taskId: 1,
+            pupId: 'pup-1',
+            body: 'Question body',
+            postedAt: new \DateTimeImmutable(),
+        );
+        $questionStore->add($q);
+        $questionStore->answer('q-poll-1', 'Answer text');
+
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $response = $server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertCount(1, $body['pendingAnswers']);
+        $this->assertSame('q-poll-1', $body['pendingAnswers'][0]['questionId']);
+        $this->assertSame('Answer text', $body['pendingAnswers'][0]['body']);
+    }
+
+    public function testPollClearsPendingAnswersAfterReturn(): void
+    {
+        $questionStore = new \ScottKeckWarren\Kanine\Supervisor\QuestionStore();
+        $server = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: $this->queue,
+            pupRegistry: $this->registry,
+            logger: $this->logger,
+            questionStore: $questionStore,
+        );
+
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $q = new \ScottKeckWarren\Kanine\Domain\Question(
+            id: 'q-clear-1',
+            taskId: 1,
+            pupId: 'pup-1',
+            body: 'Question',
+            postedAt: new \DateTimeImmutable(),
+        );
+        $questionStore->add($q);
+        $questionStore->answer('q-clear-1', 'Answer');
+
+        $request = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $server->handle($request);
+
+        $response2 = $server->handle($request);
+        $body2     = json_decode((string) $response2->getBody(), true);
+        $this->assertSame([], $body2['pendingAnswers']);
+    }
+
     protected function setUp(): void
     {
         $this->logger       = $this->createMock(LoggerInterface::class);
@@ -1113,6 +1424,18 @@ final class HttpServerTest extends TestCase
             readyLabel: 'kanine: ready',
             doneLabel: 'kanine: done',
             failedLabel: 'kanine: failed',
+        );
+    }
+
+    private function makeServerWithQuestionStore(): HttpServer
+    {
+        return new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: $this->queue,
+            pupRegistry: $this->registry,
+            logger: $this->logger,
+            questionStore: new \ScottKeckWarren\Kanine\Supervisor\QuestionStore(),
         );
     }
 

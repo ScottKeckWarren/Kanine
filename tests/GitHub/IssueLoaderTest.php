@@ -454,4 +454,72 @@ final class IssueLoaderTest extends TestCase
         $issue11 = array_filter($infoMessages, fn (string $m): bool => str_contains($m, '#11'));
         $this->assertNotEmpty($issue11, 'Expected info log for issue #11');
     }
+
+    // -------------------------------------------------------------------------
+    // T020: IssueStore population
+    // -------------------------------------------------------------------------
+
+    public function testLoaderPopulatesIssueStoreWithAllOpenIssues(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->with('owner/repo')
+            ->willReturn([
+                [
+                    'number' => 1,
+                    'title'  => 'Ready issue',
+                    'body'   => 'Body A',
+                    'labels' => [['name' => 'kanine: ready']],
+                ],
+                [
+                    'number' => 2,
+                    'title'  => 'Backlog issue',
+                    'body'   => 'Body B',
+                    'labels' => [['name' => 'bug']],
+                ],
+            ]);
+
+        $issueStore  = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $labelMapper = new \ScottKeckWarren\Kanine\GitHub\LabelMapper([
+            new \ScottKeckWarren\Kanine\Domain\Column(name: 'Backlog', label: 'backlog', position: 0),
+        ]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+            issueStore: $issueStore,
+            labelMapper: $labelMapper,
+        );
+
+        $loader->load();
+
+        $this->assertCount(2, $issueStore->getAll());
+    }
+
+    public function testLoaderDoesNotRequireIssueStore(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willReturn([
+                [
+                    'number' => 5,
+                    'title'  => 'Some issue',
+                    'body'   => 'Body',
+                    'labels' => [['name' => 'kanine: ready']],
+                ],
+            ]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+        );
+
+        $tasks = $loader->load();
+
+        $this->assertCount(1, $tasks);
+        $this->assertInstanceOf(\ScottKeckWarren\Kanine\Domain\Task::class, $tasks[0]);
+    }
 }
