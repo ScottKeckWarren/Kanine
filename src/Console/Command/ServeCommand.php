@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace ScottKeckWarren\Kanine\Console\Command;
 
 use Psr\Log\LoggerInterface;
+use ScottKeckWarren\Kanine\Board\BoardRenderer;
 use ScottKeckWarren\Kanine\Config\ConfigInitializerInterface;
 use ScottKeckWarren\Kanine\Config\ConfigLoaderInterface;
 use ScottKeckWarren\Kanine\Config\Configuration;
 use ScottKeckWarren\Kanine\GitHub\IssueLoaderInterface;
+use ScottKeckWarren\Kanine\Supervisor\Dispatcher;
+use ScottKeckWarren\Kanine\Supervisor\IssueStore;
 use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
 use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 use Symfony\Component\Console\Command\Command;
@@ -39,6 +42,9 @@ final class ServeCommand extends Command
         ?callable $signalInstaller = null,
         ?callable $issueLoaderFactory = null,
         ?callable $httpServerFactory = null,
+        private readonly ?BoardRenderer $boardRenderer = null,
+        private readonly ?Dispatcher $dispatcher = null,
+        private readonly ?IssueStore $issueStore = null,
     ) {
         parent::__construct('serve');
         $this->signalInstaller    = $signalInstaller ?? static function (int $signal, callable $handler): void {
@@ -48,6 +54,31 @@ final class ServeCommand extends Command
         };
         $this->issueLoaderFactory = $issueLoaderFactory;
         $this->httpServerFactory  = $httpServerFactory;
+    }
+
+    public function getDispatcher(): ?Dispatcher
+    {
+        return $this->dispatcher;
+    }
+
+    /**
+     * Handle a pup status transition — releases assignment when status is complete or failed.
+     */
+    public function handleStatusTransition(string $pupId, string $status): void
+    {
+        if ($status !== 'complete' && $status !== 'failed') {
+            return;
+        }
+
+        if ($this->issueStore === null) {
+            return;
+        }
+
+        $issue = $this->issueStore->getByPupId($pupId);
+
+        if ($issue !== null) {
+            $this->issueStore->unassign($issue->id, $issue->repo);
+        }
     }
 
     protected function configure(): void
