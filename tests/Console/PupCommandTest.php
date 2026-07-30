@@ -11,7 +11,9 @@ use ScottKeckWarren\Kanine\Pup\ClaudeRunner;
 use ScottKeckWarren\Kanine\Pup\GitHubLabelWriterInterface;
 use ScottKeckWarren\Kanine\Pup\PromptResolver;
 use ScottKeckWarren\Kanine\Pup\PromptResolverInterface;
+use ScottKeckWarren\Kanine\Pup\PullRequestCreatorInterface;
 use ScottKeckWarren\Kanine\Pup\PupClientInterface;
+use ScottKeckWarren\Kanine\Pup\WorktreeManagerInterface;
 use ScottKeckWarren\Kanine\ValueObject\String\Prompt;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -1267,6 +1269,230 @@ final class PupCommandTest extends TestCase
         (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
 
         $this->assertSame($resolvedPrompt, $capturedPrompt);
+    }
+
+    // -------------------------------------------------------------------------
+    // T045: WorktreeManager + PullRequestCreator lifecycle
+    // -------------------------------------------------------------------------
+
+    public function testWorktreeCreatedOnAssignment(): void
+    {
+        $assignment = [
+            'issueId' => 42,
+            'repo'    => 'owner/repo',
+            'title'   => 'Fix bug',
+            'body'    => 'body text',
+        ];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b, ?string $wd): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($assignment, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['assignment' => $assignment, 'new_task' => null, 'pendingAnswers' => []]
+                : ['assignment' => null, 'new_task' => null, 'pendingAnswers' => []];
+        });
+        $client->method('reportStatus');
+
+        $worktreeManager = $this->createMock(WorktreeManagerInterface::class);
+        $worktreeManager->expects($this->once())
+            ->method('create')
+            ->with(42)
+            ->willReturn('/worktrees/issue-42');
+
+        $pullRequestCreator = $this->createMock(PullRequestCreatorInterface::class);
+        $pullRequestCreator->method('push');
+        $pullRequestCreator->method('createPR')->willReturn('https://github.com/owner/repo/pull/1');
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            worktreeManager: $worktreeManager,
+            pullRequestCreator: $pullRequestCreator,
+            prOwner: 'owner',
+            prRepo: 'repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    public function testPullRequestCreatedOnSuccess(): void
+    {
+        $assignment = [
+            'issueId' => 42,
+            'repo'    => 'owner/repo',
+            'title'   => 'Fix bug',
+            'body'    => 'body text',
+        ];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b, ?string $wd): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($assignment, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['assignment' => $assignment, 'new_task' => null, 'pendingAnswers' => []]
+                : ['assignment' => null, 'new_task' => null, 'pendingAnswers' => []];
+        });
+        $client->method('reportStatus');
+
+        $worktreeManager = $this->createMock(WorktreeManagerInterface::class);
+        $worktreeManager->method('create')->willReturn('/worktrees/issue-42');
+
+        $pullRequestCreator = $this->createMock(PullRequestCreatorInterface::class);
+        $pullRequestCreator->expects($this->once())
+            ->method('push')
+            ->with('/worktrees/issue-42', 'issue-42');
+        $pullRequestCreator->expects($this->once())
+            ->method('createPR')
+            ->with('owner', 'repo', 'issue-42', 'Fix bug', 'body text')
+            ->willReturn('https://github.com/owner/repo/pull/1');
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            worktreeManager: $worktreeManager,
+            pullRequestCreator: $pullRequestCreator,
+            prOwner: 'owner',
+            prRepo: 'repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    public function testWorktreeRemovedOnFailure(): void
+    {
+        $assignment = [
+            'issueId' => 42,
+            'repo'    => 'owner/repo',
+            'title'   => 'Fix bug',
+            'body'    => 'body text',
+        ];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(1);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b, ?string $wd): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($assignment, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['assignment' => $assignment, 'new_task' => null, 'pendingAnswers' => []]
+                : ['assignment' => null, 'new_task' => null, 'pendingAnswers' => []];
+        });
+        $client->method('reportStatus');
+        $client->method('postComplete')->willReturn([]);
+
+        $worktreeManager = $this->createMock(WorktreeManagerInterface::class);
+        $worktreeManager->method('create')->willReturn('/worktrees/issue-42');
+        $worktreeManager->expects($this->once())
+            ->method('remove')
+            ->with('/worktrees/issue-42');
+
+        $pullRequestCreator = $this->createMock(PullRequestCreatorInterface::class);
+        $pullRequestCreator->method('createPR')->willReturn('https://github.com/owner/repo/pull/1');
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            worktreeManager: $worktreeManager,
+            pullRequestCreator: $pullRequestCreator,
+            prOwner: 'owner',
+            prRepo: 'repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+    }
+
+    // -------------------------------------------------------------------------
+    // T054: question detector
+    // -------------------------------------------------------------------------
+
+    public function testPupCommandPostsQuestionWhenDetectorReturnOne(): void
+    {
+        $task = [
+            'id'           => 'task-q-1',
+            'issue_number' => 10,
+            'repo'         => 'org/repo',
+            'title'        => 'Task with question',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        // Runner: one tick running, then done
+        $isRunningCount = 0;
+        $stubProcess    = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturnCallback(function () use (&$isRunningCount): bool {
+            $isRunningCount++;
+            return $isRunningCount <= 1;
+        });
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($task, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['new_task' => $task, 'throttled' => false]
+                : ['new_task' => null, 'throttled' => false];
+        });
+        $client->expects($this->once())
+            ->method('postQuestion')
+            ->with('pup-1', 'q-det-1', 'Detected question');
+        $client->method('postComplete')->willReturn([]);
+
+        // questionDetector fires on first tick (isRunning==true), returns nothing afterwards
+        $detectorCallCount = 0;
+        $questionDetector  = function (array $lines) use (&$detectorCallCount): array {
+            $detectorCallCount++;
+            if ($detectorCallCount === 1) {
+                return [['questionId' => 'q-det-1', 'body' => 'Detected question']];
+            }
+            return [];
+        };
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $this->createMock(LoggerInterface::class),
+            maxPolls: 2,
+            runnerFactory: $factory,
+            questionDetector: $questionDetector,
+            tickSleepFn: static function (): void {
+            },
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
     }
 
     // -------------------------------------------------------------------------
