@@ -78,3 +78,9 @@ Full listing with usage: [`.ai/docs/support-scripts.md`](.ai/docs/support-script
 ### Rationale
 
 Deterministic scripts are auditable, repeatable, and catch edge cases that inline commands miss. Scripts live in the repo so they evolve alongside project requirements.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+at specs/001-supervisor-pup-workflow/plan.md
+<!-- SPECKIT END -->

@@ -23,6 +23,9 @@ final readonly class Configuration
         public string $failedLabel = 'kanine: failed',
         public string $architectLabel = 'architect',
         public string $humanFeedbackLabel = 'human feedback needed',
+        public int $dispatchIntervalSeconds = 2,
+        public int $pupTimeoutSeconds = 15,
+        public bool $tls = false,
     ) {
     }
 }

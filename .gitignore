@@ -1,5 +1,13 @@
 tmp/
-vendor
+vendor/
 .phpunit.result.cache
 .idea/
-var
+var/
+*.log
+*.cache
+.env
+.env.*
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
