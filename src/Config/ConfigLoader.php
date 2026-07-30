@@ -18,9 +18,11 @@ final class ConfigLoader implements ConfigLoaderInterface
     private const DEFAULT_ARCHITECT_LABEL       = 'architect';
     private const DEFAULT_HUMAN_FEEDBACK_LABEL  = 'human feedback needed';
     private const DEFAULT_TOKEN_ENV          = 'GITHUB_TOKEN';
-    private const DEFAULT_STATUS_INTERVAL_MS  = 10000;
-    private const DEFAULT_USAGE_THROTTLE_PCT  = 90.0;
+    private const DEFAULT_STATUS_INTERVAL_MS   = 10000;
+    private const DEFAULT_USAGE_THROTTLE_PCT   = 90.0;
     private const DEFAULT_MAX_THROTTLE_POLL_MS = 60000;
+    private const DEFAULT_DISPATCH_INTERVAL_S  = 2;
+    private const DEFAULT_PUP_TIMEOUT_S        = 15;
 
     /** @var list<string> */
     private readonly array $defaultPaths;
@@ -115,6 +117,11 @@ final class ConfigLoader implements ConfigLoaderInterface
             failedLabel: (string) ($labels['failed'] ?? self::DEFAULT_FAILED_LABEL),
             architectLabel: (string) ($labels['architect'] ?? self::DEFAULT_ARCHITECT_LABEL),
             humanFeedbackLabel: (string) ($labels['human_feedback'] ?? self::DEFAULT_HUMAN_FEEDBACK_LABEL),
+            dispatchIntervalSeconds: (int) (
+                $supervisor['dispatch_interval_seconds'] ?? self::DEFAULT_DISPATCH_INTERVAL_S
+            ),
+            pupTimeoutSeconds: (int) ($supervisor['pup_timeout_seconds'] ?? self::DEFAULT_PUP_TIMEOUT_S),
+            tls: (bool) ($supervisor['tls'] ?? false),
         );
 
         $this->validate($config, $tokenEnv);
@@ -177,6 +184,13 @@ final class ConfigLoader implements ConfigLoaderInterface
                 "ERROR: Invalid port {$config->port}. Port must be in range 1–65535."
             );
         }
+
+        if ($config->host !== '127.0.0.1' && $config->host !== '::1' && $config->tls === false) {
+            throw new \InvalidArgumentException(
+                'ERROR: supervisor.tls must be true when host is not 127.0.0.1 or ::1.'
+                . ' Set supervisor.tls: true in kanine.yaml or bind to localhost.'
+            );
+        }
     }
 
     private function buildDefaults(): Configuration
@@ -195,6 +209,9 @@ final class ConfigLoader implements ConfigLoaderInterface
             failedLabel: self::DEFAULT_FAILED_LABEL,
             architectLabel: self::DEFAULT_ARCHITECT_LABEL,
             humanFeedbackLabel: self::DEFAULT_HUMAN_FEEDBACK_LABEL,
+            dispatchIntervalSeconds: self::DEFAULT_DISPATCH_INTERVAL_S,
+            pupTimeoutSeconds: self::DEFAULT_PUP_TIMEOUT_S,
+            tls: false,
         );
     }
 }
