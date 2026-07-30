@@ -12,6 +12,7 @@ use React\Http\HttpServer as ReactHttpServer;
 use React\Http\Message\Response;
 use React\Socket\SocketServer;
 use ScottKeckWarren\Kanine\Domain\PupStatus;
+use ScottKeckWarren\Kanine\Domain\Question;
 
 final class HttpServer implements HttpServerInterface
 {
@@ -32,6 +33,8 @@ final class HttpServer implements HttpServerInterface
         private readonly string $architectLabel = 'architect',
         private readonly string $humanFeedbackLabel = 'human feedback needed',
         private readonly ?UsageTracker $usageTracker = null,
+        private readonly ?IssueStore $issueStore = null,
+        private readonly ?QuestionStore $questionStore = null,
     ) {
         $this->address = "{$host}:{$port}";
     }
@@ -76,8 +79,20 @@ final class HttpServer implements HttpServerInterface
             return $this->handleRegister($request);
         }
 
-        if ($method === 'POST' && preg_match('#^/pups/([^/]+)/poll$#', $path, $matches)) {
+        if ($method === 'GET' && preg_match('#^/pups/([^/]+)/poll$#', $path, $matches)) {
             return $this->handlePoll($request, $matches[1]);
+        }
+
+        if ($method === 'DELETE' && preg_match('#^/pups/([^/]+)$#', $path, $matches)) {
+            return $this->handleDeregister($matches[1]);
+        }
+
+        if ($method === 'POST' && preg_match('#^/pups/([^/]+)/status$#', $path, $matches)) {
+            return $this->handlePupStatus($request, $matches[1]);
+        }
+
+        if ($method === 'POST' && preg_match('#^/pups/([^/]+)/questions$#', $path, $matches)) {
+            return $this->handlePostQuestion($request, $matches[1]);
         }
 
         if ($method === 'POST' && preg_match('#^/tasks/([^/]+)/complete$#', $path, $matches)) {
@@ -167,7 +182,7 @@ final class HttpServer implements HttpServerInterface
                 $this->wasThrottled = true;
             }
 
-            return $this->jsonResponse(200, ['new_task' => null, 'throttled' => true]);
+            return $this->jsonResponse(200, ['new_task' => null, 'throttled' => true, 'pendingAnswers' => []]);
         }
 
         if ($this->wasThrottled) {
@@ -175,6 +190,8 @@ final class HttpServer implements HttpServerInterface
             $this->logger->info("UsageTracker throttle reset — usage at {$pct}%");
             $this->wasThrottled = false;
         }
+
+        $this->pupRegistry->updateHeartbeat($pupId);
 
         $newTask = null;
 
@@ -197,7 +214,45 @@ final class HttpServer implements HttpServerInterface
             }
         }
 
-        return $this->jsonResponse(200, ['new_task' => $newTask, 'throttled' => false]);
+        $pendingAnswers = $this->questionStore !== null
+            ? $this->questionStore->popAnswered($pupId)
+            : [];
+
+        $assignment = null;
+
+        if ($this->issueStore !== null && $pup->status === PupStatus::Working) {
+            $assignedIssue = $this->issueStore->getByPupId($pupId);
+
+            if ($assignedIssue !== null) {
+                $assignment = [
+                    'issueId' => $assignedIssue->id,
+                    'repo'    => $assignedIssue->repo,
+                    'title'   => $assignedIssue->title,
+                    'body'    => $assignedIssue->body,
+                    'labels'  => $assignedIssue->labels,
+                ];
+            }
+        }
+
+        return $this->jsonResponse(200, [
+            'new_task'       => $newTask,
+            'assignment'     => $assignment,
+            'throttled'      => false,
+            'pendingAnswers' => $pendingAnswers,
+        ]);
+    }
+
+    private function handleDeregister(string $pupId): Response
+    {
+        $pup = $this->pupRegistry->find($pupId);
+
+        if ($pup === null) {
+            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+        }
+
+        $this->pupRegistry->remove($pupId);
+
+        return $this->jsonResponse(200, ['ok' => true]);
     }
 
     private function handleTaskComplete(ServerRequestInterface $request, string $taskId): Response
@@ -321,6 +376,102 @@ final class HttpServer implements HttpServerInterface
         $this->logger->info("Status from pup {$pupId} on task {$taskId}: {$message}");
 
         return new Response(204);
+    }
+
+    private function handlePupStatus(ServerRequestInterface $request, string $pupId): Response
+    {
+        $body = (string) $request->getBody();
+
+        try {
+            $data = $body !== ''
+                ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+        } catch (JsonException $e) {
+            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+        }
+
+        $data       = is_array($data) ? $data : [];
+        $statusStr  = $data['status'] ?? null;
+
+        $validStatuses = ['working', 'blocked', 'complete', 'failed'];
+
+        if (!is_string($statusStr) || !in_array($statusStr, $validStatuses, strict: true)) {
+            return $this->jsonResponse(400, ['error' => "Invalid status: {$statusStr}"]);
+        }
+
+        $pup = $this->pupRegistry->find($pupId);
+
+        if ($pup === null) {
+            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+        }
+
+        $mappedStatus = match ($statusStr) {
+            'working'  => PupStatus::Working,
+            'blocked'  => PupStatus::Blocked,
+            'complete' => PupStatus::Completed,
+            'failed'   => PupStatus::Failed,
+        };
+
+        $this->pupRegistry->updateStatus($pupId, $mappedStatus);
+
+        if ($statusStr === 'complete' || $statusStr === 'failed') {
+            if ($this->issueStore !== null) {
+                $issue = $this->issueStore->getByPupId($pupId);
+
+                if ($issue !== null) {
+                    $this->issueStore->unassign($issue->id, $issue->repo);
+                }
+            }
+        }
+
+        return $this->jsonResponse(200, ['ok' => true]);
+    }
+
+    private function handlePostQuestion(ServerRequestInterface $request, string $pupId): Response
+    {
+        $pup = $this->pupRegistry->find($pupId);
+
+        if ($pup === null) {
+            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+        }
+
+        $body = (string) $request->getBody();
+
+        try {
+            $data = $body !== ''
+                ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+        } catch (JsonException $e) {
+            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+        }
+
+        $data       = is_array($data) ? $data : [];
+        $questionId = $data['questionId'] ?? null;
+        $questionBody = $data['body'] ?? null;
+
+        if (!is_string($questionId) || $questionId === '') {
+            return $this->jsonResponse(400, ['error' => 'questionId is required']);
+        }
+
+        if (!is_string($questionBody) || $questionBody === '') {
+            return $this->jsonResponse(400, ['error' => 'body is required']);
+        }
+
+        if ($this->questionStore !== null) {
+            try {
+                $this->questionStore->add(new Question(
+                    id: $questionId,
+                    taskId: 0,
+                    pupId: $pupId,
+                    body: $questionBody,
+                    postedAt: new \DateTimeImmutable(),
+                ));
+            } catch (\InvalidArgumentException $e) {
+                return $this->jsonResponse(409, ['error' => $e->getMessage()]);
+            }
+        }
+
+        return $this->jsonResponse(200, ['ok' => true]);
     }
 
     private function extractBearerToken(ServerRequestInterface $request): ?string

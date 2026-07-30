@@ -279,7 +279,7 @@ final class PupClientTest extends TestCase
 
     public function testPollRetriesOnConnectException(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -306,7 +306,7 @@ final class PupClientTest extends TestCase
 
     public function testPollBackoffDoublesDelayOnSuccessiveFailures(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -333,7 +333,7 @@ final class PupClientTest extends TestCase
 
     public function testPollBackoffCapsDelayAt30Seconds(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         // Enough failures to push delay beyond 30s: 1, 2, 4, 8, 16, 32 → capped at 30
         $exceptions = [];
@@ -362,7 +362,7 @@ final class PupClientTest extends TestCase
 
     public function testPollLogsWarningOnConnectException(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -396,7 +396,7 @@ final class PupClientTest extends TestCase
 
     public function testPollBackoffResetsToOneAfterSuccessfulPoll(): void
     {
-        $request = new Request('POST', 'http://supervisor:3737/pups/pup-1/poll');
+        $request = new Request('GET', 'http://supervisor:3737/pups/pup-1/poll');
 
         $mock = new MockHandler([
             new ConnectException('Connection refused', $request),
@@ -619,6 +619,75 @@ final class PupClientTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // reportStatus()
+    // -------------------------------------------------------------------------
+
+    public function testReportStatusPostsToPupStatusEndpoint(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['ok' => true], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->reportStatus(pupId: 'pup-1', status: 'working', message: 'running task');
+
+        $this->assertCount(1, $capturedRequests);
+        $req = $capturedRequests[0];
+
+        $this->assertSame('POST', $req->getMethod());
+        $this->assertStringContainsString('/pups/pup-1/status', $req->getUri()->getPath());
+
+        $body = json_decode((string) $req->getBody(), associative: true);
+        $this->assertSame('working', $body['status']);
+        $this->assertSame('running task', $body['message']);
+    }
+
+    public function testReportStatusSendsDefaultEmptyMessage(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['ok' => true], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->reportStatus(pupId: 'pup-1', status: 'complete');
+
+        $body = json_decode((string) $capturedRequests[0]->getBody(), associative: true);
+        $this->assertSame('', $body['message']);
+    }
+
+    // -------------------------------------------------------------------------
     // postComplete()
     // -------------------------------------------------------------------------
 
@@ -694,6 +763,63 @@ final class PupClientTest extends TestCase
         $this->assertSame('success', $body['outcome']);
         $this->assertSame('All done', $body['summary']);
         $this->assertSame(72.5, $body['usage_pct']);
+    }
+
+    // -------------------------------------------------------------------------
+    // postQuestion()
+    // -------------------------------------------------------------------------
+
+    public function testPostQuestionSendsCorrectPayload(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['ok' => true], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->postQuestion(pupId: 'pup-1', questionId: 'q-uuid-1', body: 'What should I do?');
+
+        $this->assertCount(1, $capturedRequests);
+        $req = $capturedRequests[0];
+
+        $this->assertSame('POST', $req->getMethod());
+        $this->assertStringContainsString('/pups/pup-1/questions', $req->getUri()->getPath());
+
+        $body = json_decode((string) $req->getBody(), associative: true);
+        $this->assertSame('q-uuid-1', $body['questionId']);
+        $this->assertSame('What should I do?', $body['body']);
+    }
+
+    public function testPostQuestionThrowsOn404(): void
+    {
+        $mock = new MockHandler([
+            new Response(
+                status: 404,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['error' => 'Not found'], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $client = $this->makeClient($mock);
+
+        $this->expectException(\RuntimeException::class);
+
+        $client->postQuestion(pupId: 'unknown', questionId: 'q-1', body: 'hello');
     }
 
     // -------------------------------------------------------------------------

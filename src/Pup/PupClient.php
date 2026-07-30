@@ -94,6 +94,16 @@ final class PupClient implements PupClientInterface
         }
     }
 
+    public function reportStatus(string $pupId, string $status, string $message = ''): void
+    {
+        $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/status", [
+            'json' => [
+                'status'  => $status,
+                'message' => $message,
+            ],
+        ]);
+    }
+
     public function postStatus(string $pupId, string $token, string $taskId, string $message): void
     {
         $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/status", [
@@ -109,6 +119,22 @@ final class PupClient implements PupClientInterface
         if ($response->getStatusCode() !== 204) {
             throw new \RuntimeException(
                 "Expected 204, got {$response->getStatusCode()}"
+            );
+        }
+    }
+
+    public function postQuestion(string $pupId, string $questionId, string $body): void
+    {
+        $response = $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/questions", [
+            'json' => [
+                'questionId' => $questionId,
+                'body'       => $body,
+            ],
+        ]);
+
+        if ($response->getStatusCode() !== 200) {
+            throw new \RuntimeException(
+                "Expected 200, got {$response->getStatusCode()}",
             );
         }
     }
@@ -147,7 +173,7 @@ final class PupClient implements PupClientInterface
      */
     private function doPoll(string $pupId, string $token, string $status, ?float $usagePct): array
     {
-        $response = $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/poll", [
+        $response = $this->guzzle->get("{$this->baseUrl}/pups/{$pupId}/poll", [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
             ],
