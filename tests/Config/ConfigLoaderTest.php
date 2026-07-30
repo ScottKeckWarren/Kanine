@@ -124,7 +124,7 @@ final class ConfigLoaderTest extends TestCase
             token: 'explicit-token',
             repositories: ['explicit/repo'],
             readyLabel: 'explicit: ready',
-            host: '10.0.0.1',
+            host: '127.0.0.1',
             port: 4444,
         );
         $path = $this->writeYaml($yaml, 'explicit.yaml');
@@ -154,12 +154,13 @@ final class ConfigLoaderTest extends TestCase
 
     public function testLoaderLoadsSupervisorSettingsFromExplicitPath(): void
     {
-        $yaml = $this->buildYaml(
+        $yaml = $this->buildYamlWithSupervisor(
             token: 'tok',
             repositories: ['owner/repo'],
             readyLabel: 'kanine: ready',
             host: '192.168.1.1',
             port: 8080,
+            tls: true,
         );
         $path = $this->writeYaml($yaml, 'explicit.yaml');
 
@@ -737,6 +738,140 @@ final class ConfigLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // T002: dispatch_interval_seconds and pup_timeout_seconds
+    // -------------------------------------------------------------------------
+
+    public function testDispatchIntervalSecondsDefaultIsTwo(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame(2, $config->dispatchIntervalSeconds);
+    }
+
+    public function testPupTimeoutSecondsDefaultIsFifteen(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame(15, $config->pupTimeoutSeconds);
+    }
+
+    public function testDispatchIntervalSecondsCanBeConfigured(): void
+    {
+        $yaml = $this->buildYamlWithSupervisor(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            dispatchIntervalSeconds: 5,
+        );
+        $path = $this->writeYaml($yaml, 'dispatch-interval.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(5, $config->dispatchIntervalSeconds);
+    }
+
+    public function testPupTimeoutSecondsCanBeConfigured(): void
+    {
+        $yaml = $this->buildYamlWithSupervisor(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            pupTimeoutSeconds: 30,
+        );
+        $path = $this->writeYaml($yaml, 'pup-timeout.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(30, $config->pupTimeoutSeconds);
+    }
+
+    // -------------------------------------------------------------------------
+    // T003: TLS enforcement
+    // -------------------------------------------------------------------------
+
+    public function testTlsDefaultIsFalse(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertFalse($config->tls);
+    }
+
+    public function testTlsCanBeSetToTrue(): void
+    {
+        $yaml = $this->buildYamlWithSupervisor(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            tls: true,
+        );
+        $path = $this->writeYaml($yaml, 'tls-true.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertTrue($config->tls);
+    }
+
+    public function testLoaderThrowsWhenRemoteHostHasTlsFalse(): void
+    {
+        $yaml = $this->buildYamlWithSupervisor(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            host: '10.0.0.1',
+        );
+        $path = $this->writeYaml($yaml, 'remote-no-tls.yaml');
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/tls/i');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    public function testLoaderAcceptsRemoteHostWhenTlsIsTrue(): void
+    {
+        $yaml = $this->buildYamlWithSupervisor(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            host: '10.0.0.1',
+            tls: true,
+        );
+        $path = $this->writeYaml($yaml, 'remote-with-tls.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame('10.0.0.1', $config->host);
+    }
+
+    public function testLocalhostIpv6DoesNotRequireTls(): void
+    {
+        $yaml = $this->buildYamlWithSupervisor(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            host: '::1',
+        );
+        $path = $this->writeYaml($yaml, 'ipv6-localhost.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame('::1', $config->host);
+    }
+
+    // -------------------------------------------------------------------------
     // PHPUnit lifecycle
     // -------------------------------------------------------------------------
 
@@ -819,6 +954,56 @@ final class ConfigLoaderTest extends TestCase
         }
 
         return $base;
+    }
+
+    /**
+     * @param list<string> $repositories
+     */
+    private function buildYamlWithSupervisor(
+        ?string $token,
+        array $repositories,
+        string $readyLabel = 'kanine: ready',
+        string $host = '127.0.0.1',
+        int $port = 3737,
+        ?int $dispatchIntervalSeconds = null,
+        ?int $pupTimeoutSeconds = null,
+        ?bool $tls = null,
+    ): string {
+        $repoLines = '';
+        foreach ($repositories as $repo) {
+            $repoLines .= "    - {$repo}\n";
+        }
+
+        $tokenLine = $token !== null
+            ? "  token: {$token}\n"
+            : '';
+
+        $supervisorExtras = '';
+
+        if ($dispatchIntervalSeconds !== null) {
+            $supervisorExtras .= "  dispatch_interval_seconds: {$dispatchIntervalSeconds}\n";
+        }
+
+        if ($pupTimeoutSeconds !== null) {
+            $supervisorExtras .= "  pup_timeout_seconds: {$pupTimeoutSeconds}\n";
+        }
+
+        if ($tls !== null) {
+            $tlsStr = $tls ? 'true' : 'false';
+            $supervisorExtras .= "  tls: {$tlsStr}\n";
+        }
+
+        return <<<YAML
+            github:
+              repositories:
+            {$repoLines}  token_env: GITHUB_TOKEN
+              ready_label: "{$readyLabel}"
+            {$tokenLine}
+            supervisor:
+              host: {$host}
+              port: {$port}
+            {$supervisorExtras}
+            YAML;
     }
 
     private function removeDirectory(string $dir): void

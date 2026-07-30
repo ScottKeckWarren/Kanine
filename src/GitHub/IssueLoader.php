@@ -6,8 +6,10 @@ namespace ScottKeckWarren\Kanine\GitHub;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use ScottKeckWarren\Kanine\Domain\Issue;
 use ScottKeckWarren\Kanine\Domain\Task;
 use ScottKeckWarren\Kanine\Domain\TaskState;
+use ScottKeckWarren\Kanine\Supervisor\IssueStore;
 use Throwable;
 
 final class IssueLoader implements IssueLoaderInterface
@@ -20,6 +22,8 @@ final class IssueLoader implements IssueLoaderInterface
         private readonly array $repositories,
         private readonly string $readyLabel,
         private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly ?IssueStore $issueStore = null,
+        private readonly ?LabelMapper $labelMapper = null,
     ) {
     }
 
@@ -43,6 +47,23 @@ final class IssueLoader implements IssueLoaderInterface
             foreach ($issues as $issue) {
                 $this->logger->info("Found #{$issue['number']}: {$issue['title']} ({$repository})");
 
+                $labelNames = array_map(
+                    static fn (array $label): string => $label['name'],
+                    $issue['labels'],
+                );
+
+                if ($this->issueStore !== null && $this->labelMapper !== null) {
+                    $this->issueStore->add(new Issue(
+                        id: $issue['number'],
+                        repo: $repository,
+                        title: $issue['title'],
+                        body: $issue['body'],
+                        labels: $labelNames,
+                        column: $this->labelMapper->resolveColumn($labelNames),
+                        fetchedAt: new \DateTimeImmutable(),
+                    ));
+                }
+
                 if (!$this->hasReadyLabel($issue['labels'])) {
                     continue;
                 }
@@ -53,10 +74,7 @@ final class IssueLoader implements IssueLoaderInterface
                     repo: $repository,
                     title: $issue['title'],
                     body: $issue['body'],
-                    labels: array_map(
-                        static fn (array $label): string => $label['name'],
-                        $issue['labels'],
-                    ),
+                    labels: $labelNames,
                     state: TaskState::Queued,
                 );
             }

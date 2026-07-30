@@ -10,7 +10,9 @@ use ScottKeckWarren\Kanine\Pup\ClaudeRunner;
 use ScottKeckWarren\Kanine\Pup\GitHubLabelWriterInterface;
 use ScottKeckWarren\Kanine\Pup\PromptResolver;
 use ScottKeckWarren\Kanine\Pup\PromptResolverInterface;
+use ScottKeckWarren\Kanine\Pup\PullRequestCreatorInterface;
 use ScottKeckWarren\Kanine\Pup\PupClientInterface;
+use ScottKeckWarren\Kanine\Pup\WorktreeManagerInterface;
 use ScottKeckWarren\Kanine\ValueObject\String\Prompt;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,7 +21,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class PupCommand extends Command
 {
-    /** @var Closure(Prompt $prompt, int $issueNumber, string $title, string $body): ClaudeRunner */
+    /** @var Closure(Prompt $prompt, int $issueNumber, string $title, string $body, ?string $workingDirectory): ClaudeRunner */
     private readonly Closure $runnerFactory;
 
     /** @var callable(int, callable): void */
@@ -35,6 +37,9 @@ final class PupCommand extends Command
 
     /** @var Closure(): void */
     private readonly Closure $tickSleepFn;
+
+    /** @var Closure(list<string>): list<array{questionId: string, body: string}> */
+    private readonly Closure $questionDetector;
 
     /** @var Closure(int): void */
     private readonly Closure $pollSleepFn;
@@ -55,6 +60,11 @@ final class PupCommand extends Command
         ?callable $clockFn = null,
         ?callable $tickSleepFn = null,
         ?callable $pollSleepFn = null,
+        private readonly ?WorktreeManagerInterface $worktreeManager = null,
+        private readonly ?PullRequestCreatorInterface $pullRequestCreator = null,
+        private readonly string $prOwner = '',
+        private readonly string $prRepo = '',
+        ?callable $questionDetector = null,
     ) {
         $this->promptResolver = $promptResolver ?? new PromptResolver(basePath: (string) getcwd());
         $this->runnerFactory = $runnerFactory
@@ -63,11 +73,13 @@ final class PupCommand extends Command
                 int $issueNumber,
                 string $title,
                 string $body,
+                ?string $workingDirectory = null,
             ): ClaudeRunner => new ClaudeRunner(
                 prompt: $prompt,
                 issueNumber: $issueNumber,
                 title: $title,
                 body: $body,
+                workingDirectory: $workingDirectory,
             );
         $this->signalInstaller = $signalInstaller ?? static function (int $signal, callable $handler): void {
             if (function_exists('pcntl_signal')) {
@@ -89,6 +101,11 @@ final class PupCommand extends Command
             ? Closure::fromCallable($pollSleepFn)
             : static function (int $ms): void {
                 usleep($ms * 1000);
+            };
+        $this->questionDetector = $questionDetector !== null
+            ? Closure::fromCallable($questionDetector)
+            : static function (array $lines): array {
+                return [];
             };
         parent::__construct('pup');
     }
@@ -123,6 +140,9 @@ final class PupCommand extends Command
         $currentIssueNumber = null;
         $currentTaskId      = null;
         $currentRepo        = $this->repo;
+        $currentWorktree    = null;
+        $currentTitle       = null;
+        $currentBody        = null;
 
         $shutdownHandler = function () use (&$runner): void {
             if ($runner !== null && $runner->isRunning()) {
@@ -145,13 +165,40 @@ final class PupCommand extends Command
                     $errorOutput = $runner->getErrorOutput();
 
                     if ($errorOutput !== []) {
-                        $this->logger->error('Claude stderr: ' . implode("\n", $errorOutput));
+                        $this->logger->error(
+                            "Claude stderr for task #{$currentIssueNumber}: " . implode("\n", $errorOutput),
+                        );
                     }
                 }
 
                 $outcome = ($exitCode === 0) ? 'success' : 'failure';
 
-                if ($currentTaskId !== null) {
+                if ($this->worktreeManager !== null && $currentWorktree !== null) {
+                    // New worktree-based lifecycle
+                    if ($outcome === 'success') {
+                        try {
+                            $branch = 'issue-' . $currentIssueNumber;
+                            $this->pullRequestCreator?->push($currentWorktree, $branch);
+                            $prUrl = $this->pullRequestCreator?->createPR(
+                                $this->prOwner,
+                                $this->prRepo,
+                                $branch,
+                                (string) ($currentTitle ?? 'Fix issue #' . $currentIssueNumber),
+                                (string) ($currentBody ?? ''),
+                            ) ?? '';
+                            $this->pupClient->reportStatus($pupId, 'complete', $prUrl);
+                        } catch (\Throwable $e) {
+                            $this->logger->error("PR creation failed: {$e->getMessage()}");
+                            $this->worktreeManager->remove($currentWorktree);
+                            $this->pupClient->reportStatus($pupId, 'failed', $e->getMessage());
+                        }
+                    } else {
+                        $this->worktreeManager->remove($currentWorktree);
+                        $errorMsg = implode("\n", $runner->getErrorOutput());
+                        $this->pupClient->reportStatus($pupId, 'failed', $errorMsg);
+                    }
+                } elseif ($currentTaskId !== null) {
+                    // Legacy task-based lifecycle
                     $completeResult = $this->pupClient->postComplete(
                         pupId: $pupId,
                         token: $token,
@@ -182,12 +229,16 @@ final class PupCommand extends Command
                 $runner             = null;
                 $currentIssueNumber = null;
                 $currentTaskId      = null;
+                $currentWorktree    = null;
+                $currentTitle       = null;
+                $currentBody        = null;
                 $status             = 'idle';
             }
 
-            $result    = $this->pupClient->poll(pupId: $pupId, token: $token, status: $status, usagePct: null);
-            $newTask   = $result['new_task'];
-            $throttled = $result['throttled'] ?? false;
+            $result     = $this->pupClient->poll(pupId: $pupId, token: $token, status: $status, usagePct: null);
+            $assignment = $result['assignment'] ?? null;
+            $newTask    = $result['new_task'] ?? null;
+            $throttled  = $result['throttled'] ?? false;
 
             if ($throttled) {
                 $currentDelayMs = min($currentDelayMs * 2, $this->maxThrottlePollMs);
@@ -196,21 +247,39 @@ final class PupCommand extends Command
                 $currentDelayMs = $pollIntervalMs;
             }
 
-            if ($newTask !== null) {
-                $issueNumber = $newTask['issue_number'];
-                $title       = $newTask['title'];
-                $body        = $newTask['body'] ?? '';
-                $currentRepo = $newTask['repo'];
+            // Prefer the new assignment key; fall back to legacy new_task
+            $activeAssignment = $assignment ?? $newTask;
+
+            if ($activeAssignment !== null) {
+                // Resolve issue number: new contract uses issueId, legacy uses issue_number
+                $issueNumber = $activeAssignment['issueId'] ?? $activeAssignment['issue_number'];
+                $title       = $activeAssignment['title'];
+                $body        = $activeAssignment['body'] ?? '';
+                $currentRepo = $activeAssignment['repo'];
                 /** @var list<string> $labels */
-                $labels      = $newTask['labels'] ?? [];
+                $labels      = $activeAssignment['labels'] ?? [];
 
                 $this->logger->info("Starting claude for issue #{$issueNumber}: {$title}");
                 $this->logger->info("Assigned task #{$issueNumber}: {$title} ({$currentRepo})");
 
+                $worktreePath = null;
+                if ($this->worktreeManager !== null) {
+                    $worktreePath    = $this->worktreeManager->create($issueNumber);
+                    $currentWorktree = $worktreePath;
+                }
+
                 $resolvedPrompt     = $this->promptResolver->resolve($labels);
-                $runner             = ($this->runnerFactory)($resolvedPrompt, $issueNumber, $title, $body);
+                $runner             = ($this->runnerFactory)(
+                    $resolvedPrompt,
+                    $issueNumber,
+                    $title,
+                    $body,
+                    $worktreePath,
+                );
                 $currentIssueNumber = $issueNumber;
-                $currentTaskId      = $newTask['id'] ?? null;
+                $currentTaskId      = $activeAssignment['id'] ?? null;
+                $currentTitle       = $title;
+                $currentBody        = $body;
                 $runner->start();
                 $this->logger->info('Claude command: ' . implode(' ', $runner->getCommand()));
                 $status = 'working';
@@ -221,6 +290,16 @@ final class PupCommand extends Command
                     ($this->tickSleepFn)();
 
                     $now = ($this->clockFn)();
+
+                    $detectedQuestions = ($this->questionDetector)($runner->getLines());
+                    foreach ($detectedQuestions as $detectedQuestion) {
+                        $this->pupClient->postQuestion(
+                            pupId: $pupId,
+                            questionId: $detectedQuestion['questionId'],
+                            body: $detectedQuestion['body'],
+                        );
+                        $this->pupClient->reportStatus($pupId, 'blocked', 'Waiting for operator input');
+                    }
 
                     if (($now - $lastStatusAt) >= $this->statusIntervalMs) {
                         $lastStatusAt = $now;
@@ -239,6 +318,7 @@ final class PupCommand extends Command
             } else {
                 $this->logger->debug('No task assigned');
             }
+            unset($activeAssignment);
 
             $pollCount++;
 

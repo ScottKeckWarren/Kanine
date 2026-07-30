@@ -501,6 +501,102 @@ final class ServeCommandTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // T046: handleStatusTransition
+    // -------------------------------------------------------------------------
+
+    public function testHandleStatusTransitionReleasesAssignmentOnComplete(): void
+    {
+        $issueStore = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $issueStore->add(new \ScottKeckWarren\Kanine\Domain\Issue(
+            id: 42,
+            repo: 'owner/repo',
+            title: 'Fix bug',
+            body: 'body',
+            labels: [],
+            column: 'Backlog',
+            assignedPupId: 'pup-1',
+        ));
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            issueStore: $issueStore,
+        );
+
+        $command->handleStatusTransition('pup-1', 'complete');
+
+        $this->assertNull($issueStore->getByPupId('pup-1'));
+    }
+
+    public function testHandleStatusTransitionReleasesAssignmentOnFailed(): void
+    {
+        $issueStore = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $issueStore->add(new \ScottKeckWarren\Kanine\Domain\Issue(
+            id: 42,
+            repo: 'owner/repo',
+            title: 'Fix bug',
+            body: 'body',
+            labels: [],
+            column: 'Backlog',
+            assignedPupId: 'pup-1',
+        ));
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            issueStore: $issueStore,
+        );
+
+        $command->handleStatusTransition('pup-1', 'failed');
+
+        $this->assertNull($issueStore->getByPupId('pup-1'));
+    }
+
+    public function testHandleStatusTransitionDoesNothingForWorkingStatus(): void
+    {
+        $issueStore = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $issueStore->add(new \ScottKeckWarren\Kanine\Domain\Issue(
+            id: 42,
+            repo: 'owner/repo',
+            title: 'Fix bug',
+            body: 'body',
+            labels: [],
+            column: 'Backlog',
+            assignedPupId: 'pup-1',
+        ));
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            issueStore: $issueStore,
+        );
+
+        $command->handleStatusTransition('pup-1', 'working');
+
+        $this->assertNotNull($issueStore->getByPupId('pup-1'));
+    }
+
+    public function testHandleStatusTransitionDoesNothingWhenIssueStoreNull(): void
+    {
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        // Must not throw even with no IssueStore
+        $command->handleStatusTransition('pup-1', 'complete');
+        $this->assertTrue(true);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

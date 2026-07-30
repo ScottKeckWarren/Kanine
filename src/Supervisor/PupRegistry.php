@@ -127,6 +127,38 @@ final class PupRegistry
         );
     }
 
+    /**
+     * @return list<Pup>
+     */
+    public function getAllActivePups(): array
+    {
+        return array_values(
+            array_filter(
+                $this->pups,
+                fn (Pup $pup): bool => $pup->status !== PupStatus::Inactive,
+            )
+        );
+    }
+
+    public function forceHeartbeatAt(string $pupId, \DateTimeImmutable $at): void
+    {
+        $existing = $this->find($pupId);
+
+        if ($existing === null) {
+            return;
+        }
+
+        $this->pups[$pupId] = new Pup(
+            id: $existing->id,
+            hostname: $existing->hostname,
+            token: $existing->token,
+            status: $existing->status,
+            assignedTaskId: $existing->assignedTaskId,
+            lastHeartbeatAt: $at,
+            registeredAt: $existing->registeredAt,
+        );
+    }
+
     public function updateHeartbeat(string $pupId): void
     {
         $existing = $this->find($pupId);
