@@ -16,16 +16,34 @@ interface PupClientInterface
     /**
      * Poll the supervisor for a new task assignment.
      *
-     * @return array{new_task: array<string, mixed>|null, throttled: bool}
+     * @return array{
+     *     assignment: array<string, mixed>|null,
+     *     new_task: array<string, mixed>|null,
+     *     pendingAnswers: array<mixed>
+     * }
      */
     public function poll(string $pupId, string $token, string $status, ?float $usagePct = null): array;
 
     /**
-     * Post a status update for a running task.
+     * Report pup status to the supervisor via the new /pups/{pupId}/status endpoint.
+     *
+     * @throws \RuntimeException on non-2xx response
+     */
+    public function reportStatus(string $pupId, string $status, string $message = ''): void;
+
+    /**
+     * Post a status update for a running task (legacy endpoint).
      *
      * @throws \RuntimeException on non-204 response
      */
     public function postStatus(string $pupId, string $token, string $taskId, string $message): void;
+
+    /**
+     * Post a question from the pup to the supervisor.
+     *
+     * @throws \RuntimeException on non-200 response
+     */
+    public function postQuestion(string $pupId, string $questionId, string $body): void;
 
     /**
      * Mark a task as complete.

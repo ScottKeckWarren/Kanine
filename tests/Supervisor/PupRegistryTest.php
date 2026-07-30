@@ -147,6 +147,125 @@ final class PupRegistryTest extends TestCase
         $this->assertSame('worker-01.local', $pup->hostname);
     }
 
+    public function testGetIdlePupsReturnsOnlyIdlePups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->register(pupId: 'pup-002', hostname: 'worker-02.local');
+        $this->registry->updateStatus(pupId: 'pup-002', status: PupStatus::Working);
+
+        $idlePups = $this->registry->getIdlePups();
+
+        $this->assertCount(1, $idlePups);
+        $this->assertSame('pup-001', $idlePups[0]->id);
+    }
+
+    public function testGetIdlePupsReturnsEmptyWhenNoneIdle(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->updateStatus(pupId: 'pup-001', status: PupStatus::Working);
+
+        $idlePups = $this->registry->getIdlePups();
+
+        $this->assertSame([], $idlePups);
+    }
+
+    public function testUpdateHeartbeatSetsLastHeartbeatAt(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $this->registry->updateHeartbeat('pup-001');
+
+        $pup = $this->registry->find('pup-001');
+        $this->assertNotNull($pup);
+        $this->assertNotNull($pup->lastHeartbeatAt);
+    }
+
+    public function testMarkInactiveSetsStatusToInactive(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $this->registry->markInactive('pup-001');
+
+        $pup = $this->registry->find('pup-001');
+        $this->assertNotNull($pup);
+        $this->assertSame(PupStatus::Inactive, $pup->status);
+    }
+
+    public function testMarkInactiveClearsAssignedTaskId(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->assign(pupId: 'pup-001', taskId: 'task-xyz');
+
+        $this->registry->markInactive('pup-001');
+
+        $pup = $this->registry->find('pup-001');
+        $this->assertNotNull($pup);
+        $this->assertNull($pup->assignedTaskId);
+    }
+
+    public function testRemoveDeletesPupFromRegistry(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $this->registry->remove('pup-001');
+
+        $this->assertNull($this->registry->find('pup-001'));
+    }
+
+    public function testRegisterSetsRegisteredAt(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $pup = $this->registry->find('pup-001');
+
+        $this->assertNotNull($pup);
+        $this->assertNotNull($pup->registeredAt);
+    }
+
+    public function testRegisterSetsLastHeartbeatAt(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $pup = $this->registry->find('pup-001');
+
+        $this->assertNotNull($pup);
+        $this->assertNotNull($pup->lastHeartbeatAt);
+    }
+
+    public function testGetAllActivePupsExcludesInactivePups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+
+        $this->registry->markInactive('pup-001');
+
+        $activePups = $this->registry->getAllActivePups();
+
+        $this->assertSame([], $activePups);
+    }
+
+    public function testGetAllActivePupsIncludesIdleAndWorkingPups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->register(pupId: 'pup-002', hostname: 'worker-02.local');
+        $this->registry->updateStatus(pupId: 'pup-002', status: PupStatus::Working);
+
+        $activePups = $this->registry->getAllActivePups();
+
+        $this->assertCount(2, $activePups);
+    }
+
+    public function testForceHeartbeatAtSetsCustomTime(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $knownTime = new \DateTimeImmutable('2020-01-01 00:00:00');
+
+        $this->registry->forceHeartbeatAt('pup-001', $knownTime);
+
+        $pup = $this->registry->find('pup-001');
+        $this->assertNotNull($pup);
+        $this->assertSame($knownTime->getTimestamp(), $pup->lastHeartbeatAt?->getTimestamp());
+    }
+
     protected function setUp(): void
     {
         $this->registry = new PupRegistry();

@@ -11,19 +11,24 @@ final class PupStatusTest extends TestCase
 {
     public function testItIsAStringBackedEnum(): void
     {
-        $this->assertSame('Idle', PupStatus::Idle->value);
-        $this->assertSame('Working', PupStatus::Working->value);
+        $this->assertSame('idle', PupStatus::Idle->value);
+        $this->assertSame('working', PupStatus::Working->value);
     }
 
     public function testItCanBeCreatedFromAStringValue(): void
     {
-        $this->assertSame(PupStatus::Idle, PupStatus::from('Idle'));
-        $this->assertSame(PupStatus::Working, PupStatus::from('Working'));
+        $this->assertSame(PupStatus::Idle, PupStatus::from('idle'));
+        $this->assertSame(PupStatus::Working, PupStatus::from('working'));
     }
 
-    public function testItHasExactlyFourCases(): void
+    public function testItHasExactlySixCases(): void
     {
-        $this->assertCount(4, PupStatus::cases());
+        $this->assertCount(6, PupStatus::cases());
+    }
+
+    public function testInactiveCaseHasCorrectValue(): void
+    {
+        $this->assertSame('inactive', PupStatus::Inactive->value);
     }
 
     public function testCompletedCaseHasCorrectValue(): void
