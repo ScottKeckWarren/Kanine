@@ -443,6 +443,135 @@ final class ConfigLoaderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // ConfigLoader: token resolution — explicit --token override
+    // -------------------------------------------------------------------------
+
+    public function testTokenOverrideTakesPrecedenceOverInlineToken(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'inline-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'override.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path, tokenOverride: 'cli-flag-token');
+
+        $this->assertSame('cli-flag-token', $config->githubToken);
+    }
+
+    public function testTokenOverrideTakesPrecedenceOverLocalYamlToken(): void
+    {
+        $yaml = $this->buildYaml(
+            token: null,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'kanine.yaml');
+        file_put_contents($this->tempDir . '/kanine.local.yaml', "github:\n  token: local-yaml-token\n");
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path, tokenOverride: 'cli-flag-token');
+
+        $this->assertSame('cli-flag-token', $config->githubToken);
+    }
+
+    // -------------------------------------------------------------------------
+    // ConfigLoader: token resolution — kanine.local.yaml sibling file
+    // -------------------------------------------------------------------------
+
+    public function testLoaderResolvesTokenFromLocalYamlSiblingFile(): void
+    {
+        $yaml = $this->buildYaml(
+            token: null,
+            tokenEnv: 'KANINE_MISSING_ENV_VAR_XYZ',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'kanine.yaml');
+        file_put_contents($this->tempDir . '/kanine.local.yaml', "github:\n  token: local-yaml-token\n");
+
+        putenv('KANINE_MISSING_ENV_VAR_XYZ');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame('local-yaml-token', $config->githubToken);
+    }
+
+    public function testLocalYamlTokenTakesPrecedenceOverInlineToken(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'inline-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'kanine.yaml');
+        file_put_contents($this->tempDir . '/kanine.local.yaml', "github:\n  token: local-yaml-token\n");
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame('local-yaml-token', $config->githubToken);
+    }
+
+    public function testLoaderIgnoresAbsentLocalYamlSiblingFile(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'inline-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'kanine.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame('inline-token', $config->githubToken);
+    }
+
+    public function testLoaderResolvesLocalYamlSiblingToBuiltInDefaultPath(): void
+    {
+        $originalCwd = getcwd();
+        chdir($this->tempDir);
+
+        try {
+            $dotKanineDir = $this->tempDir . '/.kanine';
+            mkdir($dotKanineDir, 0777, true);
+            $yaml = $this->buildYaml(
+                token: null,
+                tokenEnv: 'KANINE_MISSING_ENV_VAR_XYZ',
+                repositories: ['owner/repo'],
+                readyLabel: 'kanine: ready',
+                host: '127.0.0.1',
+                port: 3737,
+            );
+            file_put_contents($dotKanineDir . '/kanine.yaml', $yaml);
+            file_put_contents($dotKanineDir . '/kanine.local.yaml', "github:\n  token: local-default-token\n");
+
+            putenv('KANINE_MISSING_ENV_VAR_XYZ');
+
+            $loader = new ConfigLoader();
+            $config = $loader->load();
+
+            $this->assertSame('local-default-token', $config->githubToken);
+        } finally {
+            chdir($originalCwd);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // ConfigLoader: validation — missing GITHUB_TOKEN
     // -------------------------------------------------------------------------
 
@@ -515,6 +644,31 @@ final class ConfigLoaderTest extends TestCase
             if ($saved !== false) {
                 putenv("GITHUB_TOKEN={$saved}");
             }
+        }
+    }
+
+    public function testLoaderThrowsWithMessageMentioningTokenFlagAndLocalYamlWhenTokenMissing(): void
+    {
+        $yaml = $this->buildYaml(
+            token: null,
+            tokenEnv: 'KANINE_MISSING_ENV_VAR_XYZ',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'no-token-both-options.yaml');
+
+        putenv('KANINE_MISSING_ENV_VAR_XYZ');
+
+        $loader = new ConfigLoader();
+
+        try {
+            $loader->load(explicitPath: $path);
+            $this->fail('Expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('--token', $e->getMessage());
+            $this->assertStringContainsString('kanine.local.yaml', $e->getMessage());
         }
     }
 

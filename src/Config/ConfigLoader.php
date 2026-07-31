@@ -8,6 +8,17 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Yaml\Yaml;
 
+/**
+ * Resolves the Kanine configuration and GitHub token.
+ *
+ * Token resolution order (highest priority first):
+ *   1. An explicit token passed programmatically (the `--token` CLI flag).
+ *   2. `github.token` in a `kanine.local.yaml` file living alongside whichever
+ *      main config file was loaded. This file is optional, gitignored, and
+ *      SHOULD be created with `chmod 0600` permissions since it holds a secret.
+ *   3. Inline `github.token` in the main config file, or the environment
+ *      variable named by `github.token_env` (default `GITHUB_TOKEN`).
+ */
 final class ConfigLoader implements ConfigLoaderInterface
 {
     private const DEFAULT_HOST               = '127.0.0.1';
@@ -42,22 +53,22 @@ final class ConfigLoader implements ConfigLoaderInterface
         $this->logger = $logger ?? new NullLogger();
     }
 
-    public function load(?string $explicitPath = null): Configuration
+    public function load(?string $explicitPath = null, ?string $tokenOverride = null): Configuration
     {
         if ($explicitPath !== null) {
-            return $this->loadFromPath($explicitPath);
+            return $this->loadFromPath($explicitPath, $tokenOverride);
         }
 
         foreach ($this->defaultPaths as $candidate) {
             if (file_exists($candidate)) {
-                return $this->loadFromPath($candidate);
+                return $this->loadFromPath($candidate, $tokenOverride);
             }
         }
 
-        return $this->buildDefaults();
+        return $this->buildDefaults($tokenOverride);
     }
 
-    private function loadFromPath(string $path): Configuration
+    private function loadFromPath(string $path, ?string $tokenOverride): Configuration
     {
         if (!file_exists($path)) {
             throw new \InvalidArgumentException(
@@ -68,13 +79,34 @@ final class ConfigLoader implements ConfigLoaderInterface
         /** @var array<string, mixed> $data */
         $data = Yaml::parseFile($path);
 
-        return $this->buildFromData($data);
+        return $this->buildFromData($data, $tokenOverride, $this->readLocalToken($path));
+    }
+
+    /**
+     * Reads `github.token` from a `kanine.local.yaml` file sitting next to the given main
+     * config file path. Returns null if the sibling file doesn't exist or has no token set.
+     */
+    private function readLocalToken(string $mainConfigPath): ?string
+    {
+        $localPath = dirname($mainConfigPath) . '/kanine.local.yaml';
+
+        if (!file_exists($localPath)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $localData */
+        $localData = Yaml::parseFile($localPath);
+
+        /** @var array<string, mixed> $github */
+        $github = $localData['github'] ?? [];
+
+        return isset($github['token']) ? (string) $github['token'] : null;
     }
 
     /**
      * @param array<string, mixed> $data
      */
-    private function buildFromData(array $data): Configuration
+    private function buildFromData(array $data, ?string $tokenOverride, ?string $localToken): Configuration
     {
         /** @var array<string, mixed> $github */
         $github = $data['github'] ?? [];
@@ -89,9 +121,10 @@ final class ConfigLoader implements ConfigLoaderInterface
         $labels = $github['labels'] ?? [];
 
         $tokenEnv = (string) ($github['token_env'] ?? self::DEFAULT_TOKEN_ENV);
-        $token    = isset($github['token'])
+        $inlineToken = isset($github['token'])
             ? (string) $github['token']
             : (string) (getenv($tokenEnv) ?: '');
+        $token = $this->resolveToken($tokenOverride, $localToken, $inlineToken);
 
         /** @var list<string> $repositories */
         $repositories = array_values(array_map(
@@ -129,6 +162,19 @@ final class ConfigLoader implements ConfigLoaderInterface
         return $config;
     }
 
+    private function resolveToken(?string $tokenOverride, ?string $localToken, string $inlineToken): string
+    {
+        if ($tokenOverride !== null && $tokenOverride !== '') {
+            return $tokenOverride;
+        }
+
+        if ($localToken !== null && $localToken !== '') {
+            return $localToken;
+        }
+
+        return $inlineToken;
+    }
+
     /**
      * @param array<string, mixed> $agent
      */
@@ -154,6 +200,10 @@ final class ConfigLoader implements ConfigLoaderInterface
     private function validate(Configuration $config, string $tokenEnv): void
     {
         if ($config->githubToken === '') {
+            $alternativeOptions = "\n\nAlternatively, you can supply the token via:\n"
+                . "  - The --token CLI flag: kanine serve --token ghp_yourtoken\n"
+                . "  - A github.token entry in .kanine/kanine.local.yaml (gitignored, chmod 0600)";
+
             if ($tokenEnv === self::DEFAULT_TOKEN_ENV) {
                 throw new \InvalidArgumentException(
                     "ERROR: GITHUB_TOKEN env var not set.\n\n"
@@ -164,12 +214,14 @@ final class ConfigLoader implements ConfigLoaderInterface
                     . "  export GITHUB_TOKEN=ghp_yourtoken\n\n"
                     . "Or add it permanently to ~/.zshrc (or ~/.bashrc):\n"
                     . "  export GITHUB_TOKEN=ghp_yourtoken"
+                    . $alternativeOptions
                 );
             }
 
             throw new \InvalidArgumentException(
                 "ERROR: GITHUB_TOKEN env var not set. Export it or set token_env in kanine.yaml."
                 . " (token_env resolved to: {$tokenEnv})"
+                . $alternativeOptions
             );
         }
 
@@ -193,12 +245,14 @@ final class ConfigLoader implements ConfigLoaderInterface
         }
     }
 
-    private function buildDefaults(): Configuration
+    private function buildDefaults(?string $tokenOverride): Configuration
     {
+        $inlineToken = (string) (getenv(self::DEFAULT_TOKEN_ENV) ?: '');
+
         return new Configuration(
             host: self::DEFAULT_HOST,
             port: self::DEFAULT_PORT,
-            githubToken: (string) (getenv(self::DEFAULT_TOKEN_ENV) ?: ''),
+            githubToken: $this->resolveToken($tokenOverride, null, $inlineToken),
             repositories: [],
             readyLabel: self::DEFAULT_READY_LABEL,
             logFile: null,

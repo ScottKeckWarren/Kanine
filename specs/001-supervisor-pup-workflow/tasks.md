@@ -181,6 +181,39 @@ poll returns answer in `pendingAnswers`. See quickstart.md § Validate: US4.
 - [ ] T061 [P] Write snapshot tests for remaining board states: empty board, board with pinned issue, board with active + idle pups in `tests/Snapshot/Board/`
 - [ ] T062 Manual validation: run supervisor with 10 simulated pups per quickstart.md memory profile scenario; confirm RSS ≤ 64MB after 60 minutes
 
+## Phase 8: Token Resolution via `--token` Flag and `.kanine/kanine.local.yaml`
+
+**Purpose**: Add `--token` CLI flag and `github.token` in a gitignored, `0600`
+`.kanine/kanine.local.yaml` as higher-priority token sources, additive on top of the
+existing inline `github.token` / `github.token_env` env-var resolution (kept for
+backward compatibility — not dropped, per implementation decision); prompt names both
+new options when no token is found anywhere.
+
+- [x] T063 [P] Write failing test: `ConfigLoader` resolves token from `.kanine/kanine.local.yaml`'s
+  `github.token` when no `--token` given, in `tests/Config/ConfigLoaderTest.php`
+- [x] T064 [P] Write failing test: `--token` CLI flag takes precedence over
+  `.kanine/kanine.local.yaml`, in `tests/Config/ConfigLoaderTest.php`
+- [x] T065 [P] Write failing test: missing token from all sources produces an error naming
+  both `--token` and `.kanine/kanine.local.yaml` as options, then exits before I/O, in
+  `tests/Config/ConfigLoaderTest.php`
+- [x] T066 Update `src/Config/ConfigLoader.php`: `load()` accepts an optional
+  `tokenOverride` param; read `github.token` from `.kanine/kanine.local.yaml` sibling of
+  the loaded config if present; resolution order tokenOverride → local yaml → existing
+  inline token/token_env/env var (unchanged); `validate()` error message appends both new
+  options while keeping existing env-var instructions
+- [x] T067 Add `--token` option to `src/Console/Command/ServeCommand.php`; pass through to
+  `ConfigLoader`. Also hand-parse `--token` in `bin/kanine` (mirroring the `--pup` pattern)
+  since pup-mode and the pre-wizard serve-mode config loads happen before Symfony's own
+  option parsing runs
+- [x] T068 [P] Add `.kanine/*.local.yaml` to `.gitignore`; document resolution order and
+  `0600` permission expectation in `src/Config/ConfigLoader.php` class docblock
+- [x] T069 [P] Update `src/Config/ConfigInitializer.php` wizard: keep the `token_env`
+  question; additionally prompt for a token to write to `.kanine/kanine.local.yaml`
+  (`chmod 0600`), or leave blank to use `--token`/env var later
+- [ ] T070 Manual validation: run `bin/kanine` with no token anywhere, confirm exit message
+  names both options; add token to `.kanine/kanine.local.yaml`, confirm it starts; override
+  with `--token`, confirm precedence
+
 ---
 
 ## Dependencies & Execution Order
@@ -194,6 +227,8 @@ poll returns answer in `pendingAnswers`. See quickstart.md § Validate: US4.
 - **US3 (Phase 5)**: Depends on US2 completion (assignment must exist to work)
 - **US4 (Phase 6)**: Depends on US3 completion (status transitions must work before Q&A)
 - **Polish (Phase 7)**: Depends on all user stories complete
+- **Token Resolution (Phase 8)**: Independent of Phases 3–7; only depends on Phase 1 Config
+  work; can run any time after Setup
 
 ### User Story Dependencies
 

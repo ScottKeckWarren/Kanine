@@ -16,6 +16,7 @@ use ScottKeckWarren\Kanine\Supervisor\SupervisorInterface;
 use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class ServeCommand extends Command
@@ -84,6 +85,12 @@ final class ServeCommand extends Command
     protected function configure(): void
     {
         $this->setDescription('Start the Kanine supervisor HTTP server');
+        $this->addOption(
+            'token',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'GitHub token; overrides .kanine/kanine.local.yaml and the configured token/env var',
+        );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -93,8 +100,11 @@ final class ServeCommand extends Command
             $this->configInitializer->run($input, $output);
         }
 
+        /** @var string|null $tokenOption */
+        $tokenOption = $input->getOption('token');
+
         try {
-            $config = $this->configLoader->load();
+            $config = $this->configLoader->load(tokenOverride: $tokenOption);
         } catch (\InvalidArgumentException $e) {
             $this->logger->error($e->getMessage());
             $output->writeln('<error>' . $e->getMessage() . '</error>');

@@ -168,6 +168,58 @@ final class ConfigInitializerTest extends TestCase
         $this->assertStringContainsString('.kanine/kanine.yaml', $output->fetch());
     }
 
+    // -------------------------------------------------------------------------
+    // run() — optional local token
+    // -------------------------------------------------------------------------
+
+    public function testRunDoesNotCreateLocalYamlWhenTokenLeftBlank(): void
+    {
+        $input  = $this->makeInput("\nacme/api\n\n\n");
+        $output = new BufferedOutput();
+
+        $initializer = new ConfigInitializer(baseDir: $this->tempDir);
+        $initializer->run($input, $output);
+
+        $this->assertFileDoesNotExist($this->tempDir . '/.kanine/kanine.local.yaml');
+    }
+
+    public function testRunWritesLocalYamlWhenTokenProvided(): void
+    {
+        $input  = $this->makeInput("\nacme/api\n\nghp_supersecret\n");
+        $output = new BufferedOutput();
+
+        $initializer = new ConfigInitializer(baseDir: $this->tempDir);
+        $initializer->run($input, $output);
+
+        $this->assertFileExists($this->tempDir . '/.kanine/kanine.local.yaml');
+        $content = file_get_contents($this->tempDir . '/.kanine/kanine.local.yaml');
+        $this->assertStringContainsString('ghp_supersecret', $content);
+    }
+
+    public function testRunDoesNotWriteTokenIntoMainConfigFile(): void
+    {
+        $input  = $this->makeInput("\nacme/api\n\nghp_supersecret\n");
+        $output = new BufferedOutput();
+
+        $initializer = new ConfigInitializer(baseDir: $this->tempDir);
+        $initializer->run($input, $output);
+
+        $content = file_get_contents($this->tempDir . '/.kanine/kanine.yaml');
+        $this->assertStringNotContainsString('ghp_supersecret', $content);
+    }
+
+    public function testRunSetsLocalYamlPermissionsToOwnerReadWriteOnly(): void
+    {
+        $input  = $this->makeInput("\nacme/api\n\nghp_supersecret\n");
+        $output = new BufferedOutput();
+
+        $initializer = new ConfigInitializer(baseDir: $this->tempDir);
+        $initializer->run($input, $output);
+
+        $permissions = fileperms($this->tempDir . '/.kanine/kanine.local.yaml') & 0777;
+        $this->assertSame(0600, $permissions);
+    }
+
     public function testRunAbortsWhenUserDeclinesOverwrite(): void
     {
         // Pre-create the config file
