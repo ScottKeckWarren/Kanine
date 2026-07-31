@@ -302,6 +302,31 @@ final class IssueLoaderTest extends TestCase
         $this->assertSame(['alpha', 'kanine: ready', 'zeta'], $tasks[0]->labels);
     }
 
+    public function testItTreatsNullBodyAsEmptyString(): void
+    {
+        $client = $this->createMock(GitHubClientInterface::class);
+        $client->method('fetchOpenIssues')
+            ->willReturn([
+                [
+                    'number' => 1,
+                    'title'  => 'Issue with no description',
+                    'body'   => null,
+                    'labels' => [['name' => 'kanine: ready']],
+                ],
+            ]);
+
+        $loader = new IssueLoader(
+            client: $client,
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tasks = $loader->load();
+
+        $this->assertSame('', $tasks[0]->body);
+    }
+
     // -------------------------------------------------------------------------
     // Error handling: GitHub API exceptions
     // -------------------------------------------------------------------------
