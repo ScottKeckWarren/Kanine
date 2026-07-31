@@ -94,11 +94,28 @@ final class ConfigLoader implements ConfigLoaderInterface
             return null;
         }
 
-        /** @var array<string, mixed> $localData */
         $localData = Yaml::parseFile($localPath);
 
-        /** @var array<string, mixed> $github */
+        if ($localData === null) {
+            return null;
+        }
+
+        if (!is_array($localData)) {
+            throw new \InvalidArgumentException(
+                "ERROR: {$localPath} is malformed — expected a YAML mapping at the top level"
+                . ' (e.g. `github:` followed by indented keys), got a plain value instead.'
+            );
+        }
+
         $github = $localData['github'] ?? [];
+
+        if (!is_array($github)) {
+            throw new \InvalidArgumentException(
+                "ERROR: {$localPath} is malformed — the `github` key must contain a mapping"
+                . ' with a `token` entry (e.g. `github:\n  token: ghp_yourtoken`).'
+                . ' Check for a missing space after the colon.'
+            );
+        }
 
         return isset($github['token']) ? (string) $github['token'] : null;
     }

@@ -571,6 +571,50 @@ final class ConfigLoaderTest extends TestCase
         }
     }
 
+    public function testLoaderThrowsWhenLocalYamlGithubKeyIsMalformed(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'inline-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'kanine.yaml');
+
+        // Missing space after the colon — YAML parses this as a plain scalar string
+        // under `github`, not a `token` key. Real-world typo this hardening catches.
+        file_put_contents($this->tempDir . '/kanine.local.yaml', "github:\n  token:malformed-no-space\n");
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/kanine\.local\.yaml/');
+
+        $loader->load(explicitPath: $path);
+    }
+
+    public function testLoaderThrowsWhenLocalYamlTopLevelIsNotAMapping(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'inline-token',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $path = $this->writeYaml($yaml, 'kanine.yaml');
+
+        file_put_contents($this->tempDir . '/kanine.local.yaml', "just-a-string\n");
+
+        $loader = new ConfigLoader();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/kanine\.local\.yaml/');
+
+        $loader->load(explicitPath: $path);
+    }
+
     // -------------------------------------------------------------------------
     // ConfigLoader: validation — missing GITHUB_TOKEN
     // -------------------------------------------------------------------------
