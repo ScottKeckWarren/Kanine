@@ -14,12 +14,14 @@ final class ConfigInitializer implements ConfigInitializerInterface
 {
     private readonly string $dotKanineDir;
     private readonly string $configPath;
+    private readonly string $localConfigPath;
 
     public function __construct(private readonly string $baseDir = '')
     {
-        $base               = $baseDir !== '' ? $baseDir : (getcwd() ?: '');
-        $this->dotKanineDir = $base . '/.kanine';
-        $this->configPath   = $this->dotKanineDir . '/kanine.yaml';
+        $base                  = $baseDir !== '' ? $baseDir : (getcwd() ?: '');
+        $this->dotKanineDir    = $base . '/.kanine';
+        $this->configPath      = $this->dotKanineDir . '/kanine.yaml';
+        $this->localConfigPath = $this->dotKanineDir . '/kanine.local.yaml';
     }
 
     public function configExists(): bool
@@ -68,7 +70,27 @@ final class ConfigInitializer implements ConfigInitializerInterface
             'repositories' => $repositories,
         ]);
 
+        $localTokenQuestion = new Question(
+            'GitHub token to save locally (optional — leave blank to use --token or the env var instead): ',
+            '',
+        );
+        $localToken = (string) $helper->ask($input, $output, $localTokenQuestion);
+
+        if ($localToken !== '') {
+            $this->writeLocalToken($localToken);
+        }
+
         $output->writeln("Config written to .kanine/kanine.yaml — run 'kanine serve' to start.");
+    }
+
+    private function writeLocalToken(string $token): void
+    {
+        if (!is_dir($this->dotKanineDir)) {
+            mkdir($this->dotKanineDir, 0777, true);
+        }
+
+        file_put_contents($this->localConfigPath, "github:\n  token: {$token}\n");
+        chmod($this->localConfigPath, 0600);
     }
 
     /**

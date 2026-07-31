@@ -137,7 +137,6 @@ first in the issue's label list. If no match, fall back to the column at positio
 github:
   repositories:
     - owner/repo
-  token_env: GITHUB_TOKEN
 
 board:
   columns:
@@ -158,8 +157,21 @@ supervisor:
   pup_timeout_seconds: 15
 ```
 
-**Required keys**: `github.repositories`, `github.token_env`, `board.columns`,
-`supervisor.host`, `supervisor.port`
+**Required keys**: `github.repositories`, `board.columns`, `supervisor.host`,
+`supervisor.port`
 
 **TLS enforcement**: If `supervisor.host` is not `127.0.0.1` or `::1`, `supervisor.tls`
 MUST be `true` or config validation fails at boot.
+
+**Token resolution (`.kanine/kanine.local.yaml`)**: A separate, gitignored, `0600`-permission
+file holding the secret:
+
+```yaml
+github:
+  token: ghp_xxx
+```
+
+Resolution order: `--token` CLI flag, then `github.token` in `.kanine/kanine.local.yaml`.
+If neither is present at startup, the supervisor prints instructions for both options and
+exits before any network I/O. This file MUST NOT be required by `Required keys` above since
+it is optional if `--token` is used instead.

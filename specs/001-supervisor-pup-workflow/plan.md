@@ -31,8 +31,12 @@ YAML for configuration; no persistent database in v1
 **Performance Goals**: Board re-render ≤100ms; pup poll response p95 ≤500ms;
 supervisor ≤64MB RSS after 1h with 10 pups + 5 repos
 
-**Constraints**: Terminal fully restored on exit; GitHub tokens from env vars only;
-TLS required when supervisor not bound to localhost; config validated at boot before network I/O
+**Constraints**: Terminal fully restored on exit; GitHub token resolved via `--token` CLI
+flag, `github.token` in gitignored `.kanine/kanine.local.yaml` (0600), inline
+`github.token`/`github.token_env` in tracked config, or env var, in that priority order;
+never in logs or errors; missing token on first run prompts with all options and exits
+before network I/O; TLS required when supervisor not bound to localhost; config validated
+at boot before network I/O
 
 **Scale/Scope**: 10 concurrent pups, up to 5 repositories, hours-long continuous operation
 
@@ -53,9 +57,10 @@ TLS required when supervisor not bound to localhost; config validated at boot be
 - [x] **Performance (V)**: ReactPHP event loop keeps HTTP server non-blocking; board renders
   from in-memory state (no I/O on render path); pup poll endpoint returns immediately from
   in-memory store
-- [x] **Additional Constraints**: GitHub token read from `GITHUB_TOKEN` env var; TLS gate
-  enforced by ConfigValidator when host ≠ localhost; config validated in boot sequence before
-  any GitHub or HTTP I/O
+- [x] **Additional Constraints**: GitHub token resolved from `--token` CLI flag or
+  `github.token` in gitignored, 0600 `.kanine/kanine.local.yaml`; missing token on startup
+  prints both-option instructions and exits before I/O; TLS gate enforced by ConfigValidator
+  when host ≠ localhost; config validated in boot sequence before any GitHub or HTTP I/O
 - [x] **Exceptions**: None
 
 ## Project Structure

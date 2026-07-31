@@ -597,6 +597,71 @@ final class ServeCommandTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // --token CLI option
+    // -------------------------------------------------------------------------
+
+    public function testTokenOptionIsPassedToConfigLoaderAsOverride(): void
+    {
+        $capturedTokenOverride = 'not-called';
+        $loader                = $this->makeTokenCapturingConfigLoader($capturedTokenOverride);
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $loader,
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute(['--token' => 'cli-supplied-token']);
+
+        $this->assertSame('cli-supplied-token', $capturedTokenOverride);
+    }
+
+    public function testMissingTokenOptionPassesNullOverrideToConfigLoader(): void
+    {
+        $capturedTokenOverride = 'not-called';
+        $loader                = $this->makeTokenCapturingConfigLoader($capturedTokenOverride);
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $loader,
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+
+        $this->assertNull($capturedTokenOverride);
+    }
+
+    private function makeTokenCapturingConfigLoader(mixed &$capturedTokenOverride): ConfigLoaderInterface
+    {
+        $loader = $this->createMock(ConfigLoaderInterface::class);
+        $loader->method('load')
+            ->willReturnCallback(
+                function (
+                    ?string $explicitPath = null,
+                    ?string $tokenOverride = null,
+                ) use (&$capturedTokenOverride): Configuration {
+                    $capturedTokenOverride = $tokenOverride;
+
+                    return new Configuration(
+                        host: '127.0.0.1',
+                        port: 3737,
+                        githubToken: 'gh-token',
+                        repositories: [],
+                        readyLabel: 'kanine-ready',
+                        logFile: null,
+                    );
+                }
+            );
+
+        return $loader;
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

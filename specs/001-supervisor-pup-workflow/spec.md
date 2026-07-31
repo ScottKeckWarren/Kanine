@@ -156,8 +156,14 @@ an answer; the answer is retrievable by the pup on next poll.
   most one pup at a time.
 - **FR-012**: The supervisor MUST detect pup inactivity beyond a configurable timeout and
   release the assigned issue for re-dispatch.
-- **FR-013**: Repository access tokens MUST be read from environment variables only and MUST
-  NOT appear in any log, config file, or error output.
+- **FR-013**: Repository access tokens MUST be supplied via a `--token` CLI flag,
+  `github.token` in `.kanine/kanine.local.yaml` (a gitignored, `0600`-permission local
+  file), an inline `github.token` in the tracked config, or the environment variable named
+  by `github.token_env` (default `GITHUB_TOKEN`) — checked in that priority order — and
+  MUST NOT appear in any log or error output.
+- **FR-013a**: On startup, if no token is available from any source, the supervisor MUST
+  print instructions covering `--token`, `.kanine/kanine.local.yaml`, and the env var,
+  then exit before any network I/O begins.
 - **FR-014**: The terminal MUST be fully restored to its pre-launch state when the supervisor
   exits for any reason (normal, error, or signal).
 - **FR-015**: Configuration MUST be validated at startup; any missing required key MUST produce
