@@ -96,11 +96,11 @@ final class HttpServer implements HttpServerInterface
         }
 
         if ($method === 'POST' && preg_match('#^/tasks/([^/]+)/complete$#', $path, $matches)) {
-            return $this->handleTaskComplete($request, $matches[1]);
+            return $this->handleTaskComplete($request, rawurldecode($matches[1]));
         }
 
         if ($method === 'POST' && preg_match('#^/tasks/([^/]+)/status$#', $path, $matches)) {
-            return $this->handleTaskStatus($request, $matches[1]);
+            return $this->handleTaskStatus($request, rawurldecode($matches[1]));
         }
 
         return $this->jsonResponse(404, ['error' => 'Not found']);
@@ -200,6 +200,9 @@ final class HttpServer implements HttpServerInterface
             $task = $this->taskQueue->dequeue();
 
             if ($task !== null) {
+                $this->taskQueue->enqueue($task);
+                $this->taskQueue->assign($task->id);
+                $this->taskQueue->assignTo($task->id, $pupId);
                 $this->pupRegistry->assign(pupId: $pupId, taskId: $task->id);
                 $this->pupRegistry->updateStatus(pupId: $pupId, status: PupStatus::Working);
                 $this->logger->info("Assigned task {$task->id} to pup {$pupId}");
@@ -358,11 +361,7 @@ final class HttpServer implements HttpServerInterface
             return $this->jsonResponse(422, ['error' => 'pup_id is required']);
         }
 
-        $message = $data['message'] ?? null;
-
-        if (!is_string($message) || $message === '') {
-            return $this->jsonResponse(422, ['error' => 'message is required']);
-        }
+        $message = is_string($data['message'] ?? null) ? $data['message'] : '';
 
         $owningPup = $this->pupRegistry->findByAssignedTask($taskId);
 

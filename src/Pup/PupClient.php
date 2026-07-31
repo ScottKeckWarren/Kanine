@@ -123,7 +123,7 @@ final class PupClient implements PupClientInterface
     {
         $this->logger->debug("Posting task status for pup {$pupId} on task {$taskId}: {$message}");
 
-        $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/status", [
+        $response = $this->guzzle->post("{$this->baseUrl}/tasks/" . rawurlencode($taskId) . '/status', [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
             ],
@@ -171,7 +171,7 @@ final class PupClient implements PupClientInterface
     ): array {
         $this->logger->debug("Posting completion for pup {$pupId} on task {$taskId}: outcome={$outcome}");
 
-        $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/complete", [
+        $response = $this->guzzle->post("{$this->baseUrl}/tasks/" . rawurlencode($taskId) . '/complete', [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
             ],
