@@ -58,17 +58,27 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
     $_SERVER['argv'] = array_values(array_filter($_SERVER['argv'], fn($a) => $a !== '--pup'));
     $app->setDefaultCommand('pup', isSingleCommand: true);
 } else {
-    // Load config for logger setup; ServeCommand will re-load after optional wizard.
-    $config  = $configInitializer->configExists()
-        ? $configLoader->load(tokenOverride: $tokenOverride)
-        : new \ScottKeckWarren\Kanine\Config\Configuration(
-            host: '127.0.0.1',
-            port: 3737,
-            githubToken: '',
-            repositories: [],
-            readyLabel: 'kanine: ready',
-            logFile: null,
-        );
+    // Load config for logger setup; ServeCommand will re-load (and report validation
+    // errors cleanly) after the optional wizard, so failures here fall back to defaults
+    // rather than crashing before Symfony's own command dispatch runs.
+    $defaultConfig = new \ScottKeckWarren\Kanine\Config\Configuration(
+        host: '127.0.0.1',
+        port: 3737,
+        githubToken: '',
+        repositories: [],
+        readyLabel: 'kanine: ready',
+        logFile: null,
+    );
+
+    if ($configInitializer->configExists()) {
+        try {
+            $config = $configLoader->load(tokenOverride: $tokenOverride);
+        } catch (\InvalidArgumentException) {
+            $config = $defaultConfig;
+        }
+    } else {
+        $config = $defaultConfig;
+    }
 
     $logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
 
@@ -115,7 +125,7 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
 
     $app->add(new ServeCommand($configInitializer, $configLoader, $supervisor, $logger, issueLoaderFactory: $issueLoaderFactory, httpServerFactory: $httpServerFactory));
     $app->add(new InitCommand($configInitializer));
-    $app->setDefaultCommand('serve', isSingleCommand: true);
+    $app->setDefaultCommand('serve');
 }
 
 exit($app->run());
