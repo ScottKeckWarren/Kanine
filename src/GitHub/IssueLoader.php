@@ -57,7 +57,7 @@ final class IssueLoader implements IssueLoaderInterface
                         id: $issue['number'],
                         repo: $repository,
                         title: $issue['title'],
-                        body: $issue['body'],
+                        body: $issue['body'] ?? '',
                         labels: $labelNames,
                         column: $this->labelMapper->resolveColumn($labelNames),
                         fetchedAt: new \DateTimeImmutable(),
@@ -73,7 +73,7 @@ final class IssueLoader implements IssueLoaderInterface
                     issueNumber: $issue['number'],
                     repo: $repository,
                     title: $issue['title'],
-                    body: $issue['body'],
+                    body: $issue['body'] ?? '',
                     labels: $labelNames,
                     state: TaskState::Queued,
                 );
