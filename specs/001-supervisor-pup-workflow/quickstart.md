@@ -14,7 +14,8 @@ installed and dependencies are present (`composer install`).
 
 1. PHP 8.2+ available on `$PATH`
 2. `composer install` completed
-3. A GitHub token with `repo` scope in `GITHUB_TOKEN` env var
+3. A GitHub token with `repo` scope, supplied via `--token` or saved to
+   `.kanine/kanine.local.yaml` (see below)
 4. A test repository with at least 3 open issues carrying status labels
    (e.g. `status: backlog`, `status: todo`)
 5. A local clone of the test repository present on the same machine
@@ -29,7 +30,6 @@ Create `.kanine/kanine.yaml` (or run `bin/kanine init` to use the wizard):
 github:
   repositories:
     - owner/your-test-repo
-  token_env: GITHUB_TOKEN
 
 board:
   columns:
@@ -49,6 +49,16 @@ supervisor:
   dispatch_interval_seconds: 2
   pup_timeout_seconds: 15
 ```
+
+Then supply the GitHub token either as `--token ghp_xxx` on the command line, or by
+creating gitignored `.kanine/kanine.local.yaml`:
+
+```yaml
+github:
+  token: ghp_xxx
+```
+
+If startup finds neither, the supervisor prints instructions for both options and exits.
 
 ---
 
