@@ -144,6 +144,41 @@ final class HttpServerTest extends TestCase
         $this->assertSame('task-1', $body['new_task']['id']);
     }
 
+    public function testCompleteSucceedsForTaskAssignedThroughRealPollFlow(): void
+    {
+        // Reproduces the production bug: dequeue() removes the task from the
+        // queue's internal map entirely, so a subsequent /complete lookup via
+        // find() 404s even though the task was legitimately assigned via /poll.
+        // Other Complete* tests bypass this by seeding the queue directly with
+        // enqueue()+assignTo(), which never exercises the real dequeue() path.
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task  = new Task(
+            id: 'ScottKeckWarren/Kanine#129',
+            issueNumber: 129,
+            repo: 'ScottKeckWarren/Kanine',
+            title: 'Fix bug',
+            body: 'details',
+            labels: [],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+
+        $pollRequest  = $this->makeRequest('GET', '/pups/pup-1/poll', '', "Bearer {$token}");
+        $pollResponse = $this->server->handle($pollRequest);
+        $pollBody     = json_decode((string) $pollResponse->getBody(), true);
+        $this->assertSame('ScottKeckWarren/Kanine#129', $pollBody['new_task']['id']);
+
+        $completeRequest = $this->makeRequest(
+            'POST',
+            '/tasks/' . rawurlencode('ScottKeckWarren/Kanine#129') . '/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $completeResponse = $this->server->handle($completeRequest);
+
+        $this->assertSame(200, $completeResponse->getStatusCode());
+    }
+
     public function testPollResponseIncludesLabels(): void
     {
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
@@ -283,16 +318,36 @@ final class HttpServerTest extends TestCase
         $this->assertContains('Status from pup pup-1 on task task-1: working on it', $messages);
     }
 
-    public function testStatusEndpointReturns422ForMissingMessage(): void
+    public function testStatusEndpointDefaultsMessageToEmptyStringWhenMissing(): void
     {
+        $messages = [];
+        $logger   = $this->createMock(LoggerInterface::class);
+        $logger->method('info')->willReturnCallback(function (string $msg) use (&$messages): void {
+            $messages[] = $msg;
+        });
+
+        $registry = new PupRegistry();
+        $token    = $registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $server = new HttpServer(
+            host: '127.0.0.1',
+            port: 3737,
+            taskQueue: new TaskQueue(),
+            pupRegistry: $registry,
+            logger: $logger,
+        );
+
         $request  = $this->makeRequest(
             'POST',
             '/tasks/task-1/status',
             '{"pup_id":"pup-1"}',
+            "Bearer {$token}",
         );
-        $response = $this->server->handle($request);
+        $response = $server->handle($request);
 
-        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame(204, $response->getStatusCode());
+        $this->assertContains('Status from pup pup-1 on task task-1: ', $messages);
     }
 
     public function testStatusEndpointReturns422ForMissingPupId(): void
@@ -384,6 +439,33 @@ final class HttpServerTest extends TestCase
         $request  = $this->makeRequest(
             'POST',
             '/tasks/task-1/status',
+            '{"pup_id":"pup-1","message":"working on it"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(204, $response->getStatusCode());
+    }
+
+    public function testStatusEndpointDecodesUrlEncodedTaskId(): void
+    {
+        $taskId = 'ScottKeckWarren/Kanine#129';
+        $token  = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $task   = new Task(
+            id: $taskId,
+            issueNumber: 129,
+            repo: 'ScottKeckWarren/Kanine',
+            title: 'Fix bug',
+            body: 'details',
+            labels: [],
+            state: TaskState::Queued,
+        );
+        $this->queue->enqueue($task);
+        $this->registry->assign(pupId: 'pup-1', taskId: $taskId);
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/' . rawurlencode($taskId) . '/status',
             '{"pup_id":"pup-1","message":"working on it"}',
             "Bearer {$token}",
         );
@@ -539,6 +621,36 @@ final class HttpServerTest extends TestCase
         $this->server->handle($request);
 
         $this->assertSame(TaskState::Complete, $this->queue->find('task-1')->state);
+    }
+
+    public function testCompleteEndpointDecodesUrlEncodedTaskId(): void
+    {
+        $taskId = 'ScottKeckWarren/Kanine#129';
+        $token  = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: $taskId,
+            issueNumber: 129,
+            repo: 'ScottKeckWarren/Kanine',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo($taskId, 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: $taskId);
+
+        $request = $this->makeRequest(
+            'POST',
+            '/tasks/' . rawurlencode($taskId) . '/complete',
+            '{"pup_id":"pup-1","outcome":"success"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(TaskState::Complete, $this->queue->find($taskId)->state);
     }
 
     public function testCompleteSuccessSetsPupToIdle(): void

@@ -600,6 +600,41 @@ final class PupClientTest extends TestCase
         $this->assertSame('Working on it', $body['message']);
     }
 
+    public function testPostStatusUrlEncodesTaskId(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(status: 204),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->postStatus(
+            pupId: 'pup-1',
+            token: 'my-token',
+            taskId: 'ScottKeckWarren/Kanine#129',
+            message: 'Working on it',
+        );
+
+        $this->assertCount(1, $capturedRequests);
+        $req = $capturedRequests[0];
+
+        $this->assertStringContainsString(
+            '/tasks/ScottKeckWarren%2FKanine%23129/status',
+            (string) $req->getUri(),
+        );
+    }
+
     public function testPostStatusThrowsOnNon204(): void
     {
         $mock = new MockHandler([
@@ -719,6 +754,47 @@ final class PupClientTest extends TestCase
         );
 
         $this->assertSame($responsePayload, $result);
+    }
+
+    public function testPostCompleteUrlEncodesTaskId(): void
+    {
+        $capturedRequests = [];
+
+        $mock = new MockHandler([
+            new Response(
+                status: 200,
+                headers: ['Content-Type' => 'application/json'],
+                body: json_encode(['label_actions' => []], JSON_THROW_ON_ERROR),
+            ),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$capturedRequests): callable {
+            return function (Request $request, array $options) use ($handler, &$capturedRequests) {
+                $capturedRequests[] = $request;
+                return $handler($request, $options);
+            };
+        });
+
+        $guzzle = new Client(['handler' => $stack]);
+        $client = new PupClient(baseUrl: 'http://supervisor:3737', guzzle: $guzzle);
+
+        $client->postComplete(
+            pupId: 'pup-1',
+            token: 'tok',
+            taskId: 'ScottKeckWarren/Kanine#129',
+            outcome: 'success',
+            summary: 'All done',
+            usagePct: null,
+        );
+
+        $this->assertCount(1, $capturedRequests);
+        $req = $capturedRequests[0];
+
+        $this->assertStringContainsString(
+            '/tasks/ScottKeckWarren%2FKanine%23129/complete',
+            (string) $req->getUri(),
+        );
     }
 
     public function testPostCompleteIncludesUsagePct(): void
