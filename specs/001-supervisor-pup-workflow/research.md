@@ -56,7 +56,8 @@ clean subprocess management with stdout/stderr capture.
 The pup pushes the branch via `git push` (through `symfony/process`) and then calls the API.
 
 **Rationale**: `knplabs/github-api` is already a declared dependency. It wraps the GitHub REST
-API cleanly and handles authentication via the token from `GITHUB_TOKEN`.
+API cleanly and handles authentication via the token resolved from `--token` or
+`.kanine/kanine.local.yaml`.
 
 **Alternatives considered**:
 - `gh` CLI tool: Not guaranteed to be present in all environments; introduces a runtime
@@ -108,3 +109,20 @@ is fast (one poll cycle). Questions can be re-asked.
 **Alternatives considered**:
 - SQLite persistence: Enables crash recovery but adds a dependency and complicates state
   transitions. Deferred to a future version if operator demand warrants it.
+
+## Decision 8: GitHub Token Resolution
+
+**Decision**: Resolve the token in order: `--token` CLI flag, then `github.token` in a
+gitignored, `0600`-permission `.kanine/kanine.local.yaml`. If neither is present at startup,
+print instructions covering both options and exit before any network I/O.
+
+**Rationale**: A CLI flag suits scripted/CI invocation; a local file suits interactive
+developer use without re-typing the token each run. Splitting the token into a separate
+untracked file (rather than the main `kanine.yaml`) keeps the secret out of the tracked
+config that gets shared/committed, and `0600` limits local exposure.
+
+**Alternatives considered**:
+- Env var only (original design): Correct for CI but forces the operator to export the var
+  every session; no persistence across shells.
+- Storing the token inline in the tracked `kanine.yaml`: Rejected — risks accidental commit
+  of the secret.

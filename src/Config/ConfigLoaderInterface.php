@@ -6,5 +6,5 @@ namespace ScottKeckWarren\Kanine\Config;
 
 interface ConfigLoaderInterface
 {
-    public function load(?string $explicitPath = null): Configuration;
+    public function load(?string $explicitPath = null, ?string $tokenOverride = null): Configuration;
 }

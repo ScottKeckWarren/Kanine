@@ -26,8 +26,22 @@ use ScottKeckWarren\Kanine\Supervisor\UsageTracker;
 $configLoader      = new ConfigLoader();
 $configInitializer = new ConfigInitializer();
 
+$tokenOverride = null;
+$argvForTokenScan = $argv ?? [];
+foreach ($argvForTokenScan as $index => $arg) {
+    if ($arg === '--token' && isset($argvForTokenScan[$index + 1])) {
+        $tokenOverride = $argvForTokenScan[$index + 1];
+        break;
+    }
+
+    if (str_starts_with($arg, '--token=')) {
+        $tokenOverride = substr($arg, strlen('--token='));
+        break;
+    }
+}
+
 if (in_array('--pup', $argv ?? [], strict: true)) {
-    $config  = $configLoader->load();
+    $config  = $configLoader->load(tokenOverride: $tokenOverride);
     $logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
 
     $logDir = dirname($logFile);
@@ -46,7 +60,7 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
 } else {
     // Load config for logger setup; ServeCommand will re-load after optional wizard.
     $config  = $configInitializer->configExists()
-        ? $configLoader->load()
+        ? $configLoader->load(tokenOverride: $tokenOverride)
         : new \ScottKeckWarren\Kanine\Config\Configuration(
             host: '127.0.0.1',
             port: 3737,
