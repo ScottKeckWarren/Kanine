@@ -63,6 +63,17 @@ Prints `git diff --cached --stat`. Exits non-zero if nothing staged.
 
 ## gh/
 
+### `list-issues.sh`
+
+Lists issues (open + closed) as JSON `[{number, title}]`.
+
+```
+./.claude/support-scripts/gh/list-issues.sh [--limit N]
+```
+
+- `--limit` defaults to 1000
+- Checks: `gh` installed and authenticated
+
 ### `view-issue.sh`
 
 Fetches issue by number and prints JSON.
