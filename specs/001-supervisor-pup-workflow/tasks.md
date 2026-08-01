@@ -106,8 +106,8 @@ within 2 dispatch cycles. Board pup count shows 1. See quickstart.md § Validate
 - [x] T031 [US2] Wire `Dispatcher` into `ServeCommand` ReactPHP loop periodic timer at `supervisor.dispatch_interval_seconds`
 - [x] T032 [P] [US2] Extend `src/Pup/PupClient.php` with `register(string $pupId): array` and `poll(string $pupId): array` per contracts/pup-api.md
 - [x] T033 [US2] Extend `src/Console/Command/PupCommand.php`: call `PupClient::register()` at startup; start poll loop via ReactPHP loop timer; store received assignment locally *(PupCommand exists — add registration + poll loop wiring)*
-- [ ] T034 [US2] Update `FooterRenderer` to display live pup count; show "No pups available" warning when pup count = 0 and eligible issues exist
-- [ ] T035 [US2] Add `p` key handler in `ServeCommand` to pin/unpin selected issue via `IssueStore`; update `CardRenderer` to show pinned indicator on card
+- [x] T034 [US2] Update `FooterRenderer` to display live pup count; show "No pups available" warning when pup count = 0 and eligible issues exist
+- [x] T035 [US2] Add `p` key handler in `ServeCommand` to pin/unpin selected issue via `IssueStore`; update `CardRenderer` to show pinned indicator on card
 
 **Checkpoint**: US1 + US2 both independently functional. Board auto-dispatches without operator input.
 
@@ -175,10 +175,10 @@ poll returns answer in `pendingAnswers`. See quickstart.md § Validate: US4.
 
 **Purpose**: Inactivity detection, error message audit, comprehensive test coverage.
 
-- [ ] T058 [P] Implement inactivity detection in `src/Supervisor/PupRegistry.php`: each Dispatcher tick checks `lastHeartbeatAt` against `pup_timeout_seconds`; calls `markInactive()` and releases assignment via IssueStore
-- [ ] T059 [P] Audit error messages in `src/Supervisor/HttpServer.php`, `src/Console/Command/ServeCommand.php`, `src/Console/Command/PupCommand.php`: each must name what failed + what to do next (no generic messages)
-- [ ] T060 [P] Write integration test: full dispatch → work → complete cycle in `tests/Integration/Supervisor/FullCycleTest.php`
-- [ ] T061 [P] Write snapshot tests for remaining board states: empty board, board with pinned issue, board with active + idle pups in `tests/Snapshot/Board/`
+- [x] T058 [P] Implement inactivity detection in `src/Supervisor/PupRegistry.php`: each Dispatcher tick checks `lastHeartbeatAt` against `pup_timeout_seconds`; calls `markInactive()` and releases assignment via IssueStore
+- [x] T059 [P] Audit error messages in `src/Supervisor/HttpServer.php`, `src/Console/Command/ServeCommand.php`, `src/Console/Command/PupCommand.php`: each must name what failed + what to do next (no generic messages)
+- [x] T060 [P] Write integration test: full dispatch → work → complete cycle in `tests/Integration/Supervisor/FullCycleTest.php`
+- [x] T061 [P] Write snapshot tests for remaining board states: empty board, board with pinned issue, board with active + idle pups in `tests/Snapshot/Board/`
 - [ ] T062 Manual validation: run supervisor with 10 simulated pups per quickstart.md memory profile scenario; confirm RSS ≤ 64MB after 60 minutes
 
 ## Phase 8: Token Resolution via `--token` Flag and `.kanine/kanine.local.yaml`
