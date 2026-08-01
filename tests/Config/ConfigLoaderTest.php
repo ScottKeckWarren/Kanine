@@ -1054,6 +1054,76 @@ final class ConfigLoaderTest extends TestCase
         $this->assertSame('10.0.0.1', $config->host);
     }
 
+    // -------------------------------------------------------------------------
+    // Board refresh interval + columns
+    // -------------------------------------------------------------------------
+
+    public function testRefreshIntervalSecondsDefaultIsTen(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertSame(10, $config->refreshIntervalSeconds);
+    }
+
+    public function testRefreshIntervalSecondsCanBeConfigured(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $yaml .= "\nrefresh:\n  interval_seconds: 30\n";
+        $path = $this->writeYaml($yaml, 'refresh-interval.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertSame(30, $config->refreshIntervalSeconds);
+    }
+
+    public function testColumnsDefaultToStandardFiveColumnLayout(): void
+    {
+        $loader = new ConfigLoader(
+            defaultPaths: [$this->tempDir . '/nonexistent.yaml'],
+        );
+
+        $config = $loader->load();
+
+        $this->assertCount(5, $config->columns);
+        $this->assertSame('Backlog', $config->columns[0]->name);
+    }
+
+    public function testColumnsCanBeConfigured(): void
+    {
+        $yaml = $this->buildYaml(
+            token: 'tok',
+            repositories: ['owner/repo'],
+            readyLabel: 'kanine: ready',
+            host: '127.0.0.1',
+            port: 3737,
+        );
+        $yaml .= "\nboard:\n  columns:\n"
+            . "    - { name: \"Todo\", label: \"status: todo\" }\n"
+            . "    - { name: \"Done\", label: \"status: done\" }\n";
+        $path = $this->writeYaml($yaml, 'columns.yaml');
+
+        $loader = new ConfigLoader();
+        $config = $loader->load(explicitPath: $path);
+
+        $this->assertCount(2, $config->columns);
+        $this->assertSame('Todo', $config->columns[0]->name);
+        $this->assertSame('status: todo', $config->columns[0]->label);
+        $this->assertSame(0, $config->columns[0]->position);
+        $this->assertSame('Done', $config->columns[1]->name);
+        $this->assertSame(1, $config->columns[1]->position);
+    }
+
     public function testLocalhostIpv6DoesNotRequireTls(): void
     {
         $yaml = $this->buildYamlWithSupervisor(

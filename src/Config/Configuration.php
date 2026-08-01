@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace ScottKeckWarren\Kanine\Config;
 
+use ScottKeckWarren\Kanine\Domain\Column;
+
 final readonly class Configuration
 {
     /**
      * @param list<string> $repositories
+     * @param list<Column> $columns
      */
     public function __construct(
         public string $host,
@@ -26,6 +29,8 @@ final readonly class Configuration
         public int $dispatchIntervalSeconds = 2,
         public int $pupTimeoutSeconds = 15,
         public bool $tls = false,
+        public int $refreshIntervalSeconds = 10,
+        public array $columns = [],
     ) {
     }
 }
