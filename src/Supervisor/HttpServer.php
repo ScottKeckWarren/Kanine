@@ -192,6 +192,7 @@ final class HttpServer implements HttpServerInterface
         }
 
         $this->pupRegistry->updateHeartbeat($pupId);
+        $this->logger->debug("Heartbeat from pup {$pupId} (status={$pup->status->value})");
 
         $newTask = null;
 
@@ -211,12 +212,18 @@ final class HttpServer implements HttpServerInterface
                     'labels'       => $task->labels,
                     'state'        => $task->state->value,
                 ];
+            } else {
+                $this->logger->debug("Pup {$pupId} idle, no task in queue");
             }
         }
 
         $pendingAnswers = $this->questionStore !== null
             ? $this->questionStore->popAnswered($pupId)
             : [];
+
+        if ($pendingAnswers !== []) {
+            $this->logger->debug('Delivering ' . count($pendingAnswers) . " pending answer(s) to pup {$pupId}");
+        }
 
         $assignment = null;
 
@@ -413,6 +420,7 @@ final class HttpServer implements HttpServerInterface
         };
 
         $this->pupRegistry->updateStatus($pupId, $mappedStatus);
+        $this->logger->debug("Pup {$pupId} reported status: {$statusStr}");
 
         if ($statusStr === 'complete' || $statusStr === 'failed') {
             if ($this->issueStore !== null) {
@@ -469,6 +477,8 @@ final class HttpServer implements HttpServerInterface
             } catch (\InvalidArgumentException $e) {
                 return $this->jsonResponse(409, ['error' => $e->getMessage()]);
             }
+
+            $this->logger->debug("Recorded question {$questionId} from pup {$pupId}");
         }
 
         return $this->jsonResponse(200, ['ok' => true]);
