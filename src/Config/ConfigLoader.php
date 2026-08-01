@@ -6,6 +6,7 @@ namespace ScottKeckWarren\Kanine\Config;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use ScottKeckWarren\Kanine\Domain\Column;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -34,6 +35,7 @@ final class ConfigLoader implements ConfigLoaderInterface
     private const DEFAULT_MAX_THROTTLE_POLL_MS = 60000;
     private const DEFAULT_DISPATCH_INTERVAL_S  = 2;
     private const DEFAULT_PUP_TIMEOUT_S        = 15;
+    private const DEFAULT_REFRESH_INTERVAL_S   = 10;
 
     /** @var list<string> */
     private readonly array $defaultPaths;
@@ -51,6 +53,20 @@ final class ConfigLoader implements ConfigLoaderInterface
             ($_SERVER['HOME'] ?? '') . '/.config/kanine/kanine.yaml',
         ];
         $this->logger = $logger ?? new NullLogger();
+    }
+
+    /**
+     * @return list<Column>
+     */
+    private static function defaultColumns(): array
+    {
+        return [
+            new Column(name: 'Backlog', label: 'status: backlog', position: 0),
+            new Column(name: 'Todo', label: 'status: todo', position: 1),
+            new Column(name: 'In Progress', label: 'status: in progress', position: 2),
+            new Column(name: 'Review', label: 'status: review', position: 3),
+            new Column(name: 'Done', label: 'status: done', position: 4),
+        ];
     }
 
     public function load(?string $explicitPath = null, ?string $tokenOverride = null): Configuration
@@ -137,6 +153,12 @@ final class ConfigLoader implements ConfigLoaderInterface
         /** @var array<string, mixed> $labels */
         $labels = $github['labels'] ?? [];
 
+        /** @var array<string, mixed> $refresh */
+        $refresh = $data['refresh'] ?? [];
+
+        /** @var array<string, mixed> $board */
+        $board = $data['board'] ?? [];
+
         $tokenEnv = (string) ($github['token_env'] ?? self::DEFAULT_TOKEN_ENV);
         $inlineToken = isset($github['token'])
             ? (string) $github['token']
@@ -172,11 +194,40 @@ final class ConfigLoader implements ConfigLoaderInterface
             ),
             pupTimeoutSeconds: (int) ($supervisor['pup_timeout_seconds'] ?? self::DEFAULT_PUP_TIMEOUT_S),
             tls: (bool) ($supervisor['tls'] ?? false),
+            refreshIntervalSeconds: (int) ($refresh['interval_seconds'] ?? self::DEFAULT_REFRESH_INTERVAL_S),
+            columns: $this->resolveColumns($board),
         );
 
         $this->validate($config, $tokenEnv);
 
         return $config;
+    }
+
+    /**
+     * @param array<string, mixed> $board
+     * @return list<Column>
+     */
+    private function resolveColumns(array $board): array
+    {
+        if (!isset($board['columns']) || !is_array($board['columns']) || $board['columns'] === []) {
+            return self::defaultColumns();
+        }
+
+        $columns = [];
+
+        foreach (array_values($board['columns']) as $position => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $columns[] = new Column(
+                name: (string) ($entry['name'] ?? ''),
+                label: (string) ($entry['label'] ?? ''),
+                position: $position,
+            );
+        }
+
+        return $columns !== [] ? $columns : self::defaultColumns();
     }
 
     private function resolveToken(?string $tokenOverride, ?string $localToken, string $inlineToken): string
@@ -283,6 +334,8 @@ final class ConfigLoader implements ConfigLoaderInterface
             dispatchIntervalSeconds: self::DEFAULT_DISPATCH_INTERVAL_S,
             pupTimeoutSeconds: self::DEFAULT_PUP_TIMEOUT_S,
             tls: false,
+            refreshIntervalSeconds: self::DEFAULT_REFRESH_INTERVAL_S,
+            columns: self::defaultColumns(),
         );
     }
 }

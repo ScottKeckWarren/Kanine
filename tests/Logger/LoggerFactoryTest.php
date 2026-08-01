@@ -263,6 +263,86 @@ final class LoggerFactoryTest extends TestCase
         $this->fail('RotatingFileHandler not found');
     }
 
+    // -------------------------------------------------------------------------
+    // logToStderr: false — suppress the stderr handler (TUI mode)
+    // -------------------------------------------------------------------------
+
+    public function testLogToStderrFalseOmitsStreamHandler(): void
+    {
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log', logToStderr: false);
+
+        $hasNonRotatingStream = false;
+        foreach ($logger->getHandlers() as $handler) {
+            if ($handler instanceof StreamHandler && !$handler instanceof RotatingFileHandler) {
+                $hasNonRotatingStream = true;
+            }
+        }
+
+        $this->assertFalse(
+            $hasNonRotatingStream,
+            'No stderr StreamHandler should be attached when logToStderr is false',
+        );
+    }
+
+    public function testLogToStderrFalseStillAttachesRotatingFileHandler(): void
+    {
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log', logToStderr: false);
+
+        $hasRotating = false;
+        foreach ($logger->getHandlers() as $handler) {
+            if ($handler instanceof RotatingFileHandler) {
+                $hasRotating = true;
+            }
+        }
+
+        $this->assertTrue($hasRotating);
+    }
+
+    // -------------------------------------------------------------------------
+    // extraHandler — an additional handler (e.g. an in-memory tail buffer)
+    // -------------------------------------------------------------------------
+
+    public function testExtraHandlerIsAttachedWhenProvided(): void
+    {
+        $factory = new LoggerFactory();
+        $extra   = new \ScottKeckWarren\Kanine\Logger\TailBufferHandler();
+
+        $logger = $factory->create(logFile: $this->tempDir . '/kanine.log', extraHandler: $extra);
+
+        $this->assertContains($extra, $logger->getHandlers());
+    }
+
+    // -------------------------------------------------------------------------
+    // rotationDateFormat — controls the rotated log filename's date segment
+    // -------------------------------------------------------------------------
+
+    public function testRotationDateFormatDefaultsToDashedYmd(): void
+    {
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(logFile: $this->tempDir . '/kanine.log');
+
+        $logger->info('rotation default check');
+
+        $expected = $this->tempDir . '/kanine-' . date('Y-m-d') . '.log';
+        $this->assertFileExists($expected);
+    }
+
+    public function testRotationDateFormatCanBeCustomized(): void
+    {
+        $factory = new LoggerFactory();
+        $logger  = $factory->create(
+            logFile: $this->tempDir . '/server.log',
+            rotationDateFormat: 'Ymd',
+        );
+
+        $logger->info('rotation custom check');
+
+        $expected = $this->tempDir . '/server-' . date('Ymd') . '.log';
+        $this->assertFileExists($expected);
+    }
+
     public function testStreamHandlerTargetIsStderr(): void
     {
         $factory = new LoggerFactory();

@@ -224,6 +224,30 @@ final class ServeCommandTest extends TestCase
         $this->assertStringContainsString('GITHUB_TOKEN', $tester->getDisplay());
     }
 
+    public function testServeCommandConfigErrorNamesComponentAndNextAction(): void
+    {
+        $loader = $this->createMock(ConfigLoaderInterface::class);
+        $loader->method('load')->willThrowException(
+            new \InvalidArgumentException('ERROR: GITHUB_TOKEN env var not set.')
+        );
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(true),
+            configLoader: $loader,
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+
+        $this->assertStringContainsString(
+            "Configuration error: ERROR: GITHUB_TOKEN env var not set. "
+            . "Fix .kanine/kanine.yaml (or rerun 'kanine init') and run 'kanine serve' again.",
+            $tester->getDisplay(),
+        );
+    }
+
     public function testServeCommandInjectsIssueLoaderIntoSupervisorBeforeBoot(): void
     {
         $capturedLoader = null;
@@ -594,6 +618,155 @@ final class ServeCommandTest extends TestCase
         // Must not throw even with no IssueStore
         $command->handleStatusTransition('pup-1', 'complete');
         $this->assertTrue(true);
+    }
+
+    // -------------------------------------------------------------------------
+    // T017-T021/T031/T034: BoardLoop composition
+    // -------------------------------------------------------------------------
+
+    public function testBuildBoardLoopReturnsNullWhenNoRenderingDependenciesInjected(): void
+    {
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+        );
+
+        $config = new Configuration(
+            host: '127.0.0.1',
+            port: 3737,
+            githubToken: 'gh-token',
+            repositories: [],
+            readyLabel: 'kanine-ready',
+            logFile: null,
+        );
+
+        $this->assertNull($command->buildBoardLoop($config));
+    }
+
+    public function testBuildBoardLoopReturnsNullWhenDisplayFactoryMissingEvenWithOtherDeps(): void
+    {
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            boardRenderer: new \ScottKeckWarren\Kanine\Board\BoardRenderer([]),
+            dispatcher: new \ScottKeckWarren\Kanine\Supervisor\Dispatcher(
+                new \ScottKeckWarren\Kanine\Supervisor\IssueStore(),
+                new \ScottKeckWarren\Kanine\Supervisor\PupRegistry(),
+            ),
+            issueStore: new \ScottKeckWarren\Kanine\Supervisor\IssueStore(),
+            pupRegistry: new \ScottKeckWarren\Kanine\Supervisor\PupRegistry(),
+        );
+
+        $config = new Configuration(
+            host: '127.0.0.1',
+            port: 3737,
+            githubToken: 'gh-token',
+            repositories: [],
+            readyLabel: 'kanine-ready',
+            logFile: null,
+        );
+
+        $this->assertNull($command->buildBoardLoop($config));
+    }
+
+    public function testBuildBoardLoopBuildsWorkingLoopWhenAllDependenciesInjected(): void
+    {
+        $issueStore  = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $pupRegistry = new \ScottKeckWarren\Kanine\Supervisor\PupRegistry();
+        $backend     = \PhpTui\Tui\Model\Display\Backend\DummyBackend::fromDimensions(80, 24);
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            boardRenderer: new \ScottKeckWarren\Kanine\Board\BoardRenderer([
+                new \ScottKeckWarren\Kanine\Domain\Column(name: 'Backlog', label: 'status: backlog', position: 0),
+            ]),
+            dispatcher: new \ScottKeckWarren\Kanine\Supervisor\Dispatcher($issueStore, $pupRegistry),
+            issueStore: $issueStore,
+            pupRegistry: $pupRegistry,
+            displayFactory: fn () => \PhpTui\Tui\DisplayBuilder::default($backend)->build(),
+            eventProviderFactory: fn () => new class implements \PhpTui\Term\EventProvider {
+                public function next(): ?\PhpTui\Term\Event
+                {
+                    return null;
+                }
+            },
+        );
+
+        $config = new Configuration(
+            host: '127.0.0.1',
+            port: 3737,
+            githubToken: 'gh-token',
+            repositories: [],
+            readyLabel: 'kanine-ready',
+            logFile: null,
+            columns: [
+                new \ScottKeckWarren\Kanine\Domain\Column(name: 'Backlog', label: 'status: backlog', position: 0),
+            ],
+        );
+
+        $loop = $command->buildBoardLoop($config);
+
+        $this->assertInstanceOf(\ScottKeckWarren\Kanine\Board\BoardLoop::class, $loop);
+
+        $loop->render();
+        $this->assertStringContainsString('pups: 0', $backend->toString());
+    }
+
+    public function testBuildBoardLoopWiresInjectedLogTailProviderIntoRenderedOutput(): void
+    {
+        $issueStore  = new \ScottKeckWarren\Kanine\Supervisor\IssueStore();
+        $pupRegistry = new \ScottKeckWarren\Kanine\Supervisor\PupRegistry();
+        $backend     = \PhpTui\Tui\Model\Display\Backend\DummyBackend::fromDimensions(80, 24);
+
+        $logTail = new class implements \ScottKeckWarren\Kanine\Logger\LogTailProvider {
+            /**
+             * @return list<string>
+             */
+            public function tail(int $lines): array
+            {
+                return ['12:00:00 INFO: something happened'];
+            }
+        };
+
+        $command = new ServeCommand(
+            configInitializer: $this->makeInitializer(configExists: true),
+            configLoader: $this->makeConfigLoader(),
+            supervisor: $this->createMock(SupervisorInterface::class),
+            logger: $this->createMock(LoggerInterface::class),
+            boardRenderer: new \ScottKeckWarren\Kanine\Board\BoardRenderer([]),
+            dispatcher: new \ScottKeckWarren\Kanine\Supervisor\Dispatcher($issueStore, $pupRegistry),
+            issueStore: $issueStore,
+            pupRegistry: $pupRegistry,
+            logTail: $logTail,
+            displayFactory: fn () => \PhpTui\Tui\DisplayBuilder::default($backend)->build(),
+            eventProviderFactory: fn () => new class implements \PhpTui\Term\EventProvider {
+                public function next(): ?\PhpTui\Term\Event
+                {
+                    return null;
+                }
+            },
+        );
+
+        $config = new Configuration(
+            host: '127.0.0.1',
+            port: 3737,
+            githubToken: 'gh-token',
+            repositories: [],
+            readyLabel: 'kanine-ready',
+            logFile: null,
+        );
+
+        $loop = $command->buildBoardLoop($config);
+        $loop->render();
+
+        $this->assertStringContainsString('something happened', $backend->toString());
     }
 
     // -------------------------------------------------------------------------

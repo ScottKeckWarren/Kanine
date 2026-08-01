@@ -103,7 +103,10 @@ final class HttpServer implements HttpServerInterface
             return $this->handleTaskStatus($request, rawurldecode($matches[1]));
         }
 
-        return $this->jsonResponse(404, ['error' => 'Not found']);
+        return $this->jsonResponse(404, [
+            'error' => "No route matches {$method} {$path}. "
+                . 'Check the HTTP method and path against the pup API contract.',
+        ]);
     }
 
     private function handleRegister(ServerRequestInterface $request): Response
@@ -115,7 +118,11 @@ final class HttpServer implements HttpServerInterface
                 ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
         } catch (JsonException $e) {
-            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+            return $this->jsonResponse(400, [
+                'error' => "Malformed JSON in POST /pups/register body: {$e->getMessage()}. "
+                    . 'Resend with a valid JSON payload containing pup_id and hostname.',
+                'code' => 'INVALID_JSON',
+            ]);
         }
 
         $data   = is_array($data) ? $data : [];
@@ -123,11 +130,17 @@ final class HttpServer implements HttpServerInterface
         $hostname = $data['hostname'] ?? null;
 
         if (!is_string($pupId) || $pupId === '') {
-            return $this->jsonResponse(422, ['error' => 'pup_id is required']);
+            return $this->jsonResponse(422, [
+                'error' => 'pup_id is required in the POST /pups/register body; '
+                    . 'include a non-empty pup_id string.',
+            ]);
         }
 
         if (!is_string($hostname) || $hostname === '') {
-            return $this->jsonResponse(422, ['error' => 'hostname is required']);
+            return $this->jsonResponse(422, [
+                'error' => 'hostname is required in the POST /pups/register body; '
+                    . 'include a non-empty hostname string.',
+            ]);
         }
 
         $token = $this->pupRegistry->register(pupId: $pupId, hostname: $hostname);
@@ -152,7 +165,11 @@ final class HttpServer implements HttpServerInterface
                 $decoded = json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
                 $data    = is_array($decoded) ? $decoded : [];
             } catch (JsonException $e) {
-                return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+                return $this->jsonResponse(400, [
+                    'error' => "Malformed JSON in GET /pups/{$pupId}/poll body: {$e->getMessage()}. "
+                        . 'Resend with a valid JSON payload or an empty body.',
+                    'code' => 'INVALID_JSON',
+                ]);
             }
         }
 
@@ -160,14 +177,19 @@ final class HttpServer implements HttpServerInterface
 
         if ($pup === null) {
             $this->logger->info("Poll from unknown pup {$pupId}");
-            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+            return $this->jsonResponse(404, [
+                'error' => "Unknown pup: {$pupId}. Register the pup via POST /pups/register before polling.",
+            ]);
         }
 
         $token = $this->extractBearerToken($request);
 
         if ($token === null || !$this->pupRegistry->validate(pupId: $pupId, token: $token)) {
             $this->logger->info("Unauthorized poll attempt for pup {$pupId}");
-            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+            return $this->jsonResponse(401, [
+                'error' => "Unauthorized poll for pup {$pupId}: missing or invalid bearer token. "
+                    . 'Re-register the pup to obtain a valid token.',
+            ]);
         }
 
         $usagePct = isset($data['usage_pct']) && is_float($data['usage_pct']) ? $data['usage_pct'] : null;
@@ -257,7 +279,9 @@ final class HttpServer implements HttpServerInterface
         $pup = $this->pupRegistry->find($pupId);
 
         if ($pup === null) {
-            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+            return $this->jsonResponse(404, [
+                'error' => "Unknown pup: {$pupId}. It may already be deregistered; no action needed.",
+            ]);
         }
 
         $this->pupRegistry->remove($pupId);
@@ -270,7 +294,10 @@ final class HttpServer implements HttpServerInterface
         $token = $this->extractBearerToken($request);
 
         if ($token === null) {
-            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+            return $this->jsonResponse(401, [
+                'error' => "Unauthorized: missing bearer token for POST /tasks/{$taskId}/complete. "
+                    . "Include 'Authorization: Bearer <token>' from registration.",
+            ]);
         }
 
         $body = (string) $request->getBody();
@@ -280,36 +307,53 @@ final class HttpServer implements HttpServerInterface
                 ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
         } catch (JsonException $e) {
-            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+            return $this->jsonResponse(400, [
+                'error' => "Malformed JSON in POST /tasks/{$taskId}/complete body: {$e->getMessage()}. "
+                    . 'Resend with a valid JSON payload containing pup_id and outcome.',
+                'code' => 'INVALID_JSON',
+            ]);
         }
 
         $data  = is_array($data) ? $data : [];
         $pupId = $data['pup_id'] ?? null;
 
         if (!is_string($pupId) || $pupId === '') {
-            return $this->jsonResponse(422, ['error' => 'pup_id is required']);
+            return $this->jsonResponse(422, [
+                'error' => "pup_id is required in the POST /tasks/{$taskId}/complete body; "
+                    . 'include a non-empty pup_id string.',
+            ]);
         }
 
         if (!$this->pupRegistry->validate(pupId: $pupId, token: $token)) {
-            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+            return $this->jsonResponse(401, [
+                'error' => "Unauthorized: invalid token for pup {$pupId}. "
+                    . 'Re-register the pup to obtain a valid token.',
+            ]);
         }
 
         $task = $this->taskQueue->find($taskId);
 
         if ($task === null) {
-            return $this->jsonResponse(404, ['error' => "Unknown task: {$taskId}"]);
+            return $this->jsonResponse(404, [
+                'error' => "Unknown task: {$taskId}. Verify the task id returned from a previous poll.",
+            ]);
         }
 
         $assignedPupId = $this->taskQueue->getAssignedPupId($taskId);
 
         if ($assignedPupId !== $pupId) {
-            return $this->jsonResponse(403, ['error' => 'Forbidden']);
+            return $this->jsonResponse(403, [
+                'error' => "Forbidden: task {$taskId} is assigned to a different pup. "
+                    . 'Only the assigned pup can report completion.',
+            ]);
         }
 
         $outcome = $data['outcome'] ?? null;
 
         if ($outcome !== 'success' && $outcome !== 'failure') {
-            return $this->jsonResponse(422, ['error' => "Invalid outcome: {$outcome}"]);
+            return $this->jsonResponse(422, [
+                'error' => "Invalid outcome '{$outcome}' for task {$taskId}; use 'success' or 'failure'.",
+            ]);
         }
 
         $usagePct = $data['usage_pct'] ?? null;
@@ -351,14 +395,21 @@ final class HttpServer implements HttpServerInterface
                 ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
         } catch (JsonException $e) {
-            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+            return $this->jsonResponse(400, [
+                'error' => "Malformed JSON in POST /tasks/{$taskId}/status body: {$e->getMessage()}. "
+                    . 'Resend with a valid JSON payload containing pup_id.',
+                'code' => 'INVALID_JSON',
+            ]);
         }
 
         $data  = is_array($data) ? $data : [];
         $pupId = $data['pup_id'] ?? null;
 
         if (!is_string($pupId) || $pupId === '') {
-            return $this->jsonResponse(422, ['error' => 'pup_id is required']);
+            return $this->jsonResponse(422, [
+                'error' => "pup_id is required in the POST /tasks/{$taskId}/status body; "
+                    . 'include a non-empty pup_id string.',
+            ]);
         }
 
         $message = is_string($data['message'] ?? null) ? $data['message'] : '';
@@ -366,17 +417,25 @@ final class HttpServer implements HttpServerInterface
         $owningPup = $this->pupRegistry->findByAssignedTask($taskId);
 
         if ($owningPup === null) {
-            return $this->jsonResponse(404, ['error' => "Unknown task: {$taskId}"]);
+            return $this->jsonResponse(404, [
+                'error' => "Unknown task: {$taskId}. Verify the task id returned from a previous poll.",
+            ]);
         }
 
         if ($owningPup->id !== $pupId) {
-            return $this->jsonResponse(403, ['error' => 'Forbidden']);
+            return $this->jsonResponse(403, [
+                'error' => "Forbidden: task {$taskId} is assigned to pup {$owningPup->id}, not {$pupId}. "
+                    . 'Only the assigned pup can report status.',
+            ]);
         }
 
         $token = $this->extractBearerToken($request);
 
         if ($token === null || !$this->pupRegistry->validate(pupId: $pupId, token: $token)) {
-            return $this->jsonResponse(401, ['error' => 'Unauthorized']);
+            return $this->jsonResponse(401, [
+                'error' => "Unauthorized status report for pup {$pupId}: missing or invalid bearer token. "
+                    . 'Re-register the pup to obtain a valid token.',
+            ]);
         }
 
         $this->logger->info("Status from pup {$pupId} on task {$taskId}: {$message}");
@@ -393,7 +452,11 @@ final class HttpServer implements HttpServerInterface
                 ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
         } catch (JsonException $e) {
-            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+            return $this->jsonResponse(400, [
+                'error' => "Malformed JSON in POST /pups/{$pupId}/status body: {$e->getMessage()}. "
+                    . 'Resend with a valid JSON payload containing status.',
+                'code' => 'INVALID_JSON',
+            ]);
         }
 
         $data       = is_array($data) ? $data : [];
@@ -402,13 +465,18 @@ final class HttpServer implements HttpServerInterface
         $validStatuses = ['working', 'blocked', 'complete', 'failed'];
 
         if (!is_string($statusStr) || !in_array($statusStr, $validStatuses, strict: true)) {
-            return $this->jsonResponse(400, ['error' => "Invalid status: {$statusStr}"]);
+            return $this->jsonResponse(400, [
+                'error' => "Invalid status '{$statusStr}' for pup {$pupId}; "
+                    . 'use one of: working, blocked, complete, failed.',
+            ]);
         }
 
         $pup = $this->pupRegistry->find($pupId);
 
         if ($pup === null) {
-            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+            return $this->jsonResponse(404, [
+                'error' => "Unknown pup: {$pupId}. Register via POST /pups/register before reporting status.",
+            ]);
         }
 
         $mappedStatus = match ($statusStr) {
@@ -439,7 +507,9 @@ final class HttpServer implements HttpServerInterface
         $pup = $this->pupRegistry->find($pupId);
 
         if ($pup === null) {
-            return $this->jsonResponse(404, ['error' => "Unknown pup: {$pupId}"]);
+            return $this->jsonResponse(404, [
+                'error' => "Unknown pup: {$pupId}. Register via POST /pups/register before posting questions.",
+            ]);
         }
 
         $body = (string) $request->getBody();
@@ -449,7 +519,11 @@ final class HttpServer implements HttpServerInterface
                 ? json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
         } catch (JsonException $e) {
-            return $this->jsonResponse(400, ['error' => $e->getMessage(), 'code' => 'INVALID_JSON']);
+            return $this->jsonResponse(400, [
+                'error' => "Malformed JSON in POST /pups/{$pupId}/questions body: {$e->getMessage()}. "
+                    . 'Resend with a valid JSON payload containing questionId and body.',
+                'code' => 'INVALID_JSON',
+            ]);
         }
 
         $data       = is_array($data) ? $data : [];
@@ -457,11 +531,17 @@ final class HttpServer implements HttpServerInterface
         $questionBody = $data['body'] ?? null;
 
         if (!is_string($questionId) || $questionId === '') {
-            return $this->jsonResponse(400, ['error' => 'questionId is required']);
+            return $this->jsonResponse(400, [
+                'error' => "questionId is required in the POST /pups/{$pupId}/questions body; "
+                    . 'include a non-empty questionId string.',
+            ]);
         }
 
         if (!is_string($questionBody) || $questionBody === '') {
-            return $this->jsonResponse(400, ['error' => 'body is required']);
+            return $this->jsonResponse(400, [
+                'error' => "body is required in the POST /pups/{$pupId}/questions body; "
+                    . 'include a non-empty body string.',
+            ]);
         }
 
         if ($this->questionStore !== null) {
@@ -474,7 +554,9 @@ final class HttpServer implements HttpServerInterface
                     postedAt: new \DateTimeImmutable(),
                 ));
             } catch (\InvalidArgumentException $e) {
-                return $this->jsonResponse(409, ['error' => $e->getMessage()]);
+                return $this->jsonResponse(409, [
+                    'error' => "{$e->getMessage()}. Use a unique questionId per question.",
+                ]);
             }
 
             $this->logger->debug("Recorded question {$questionId} from pup {$pupId}");

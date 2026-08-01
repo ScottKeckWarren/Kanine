@@ -1379,6 +1379,132 @@ final class PupCommandTest extends TestCase
         (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
     }
 
+    public function testPrCreationFailureLogsMessageNamingComponentAndNextAction(): void
+    {
+        $assignment = [
+            'issueId' => 42,
+            'repo'    => 'owner/repo',
+            'title'   => 'Fix bug',
+            'body'    => 'body text',
+        ];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b, ?string $wd): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(function () use ($assignment, &$pollCount): array {
+            $pollCount++;
+            return $pollCount === 1
+                ? ['assignment' => $assignment, 'new_task' => null, 'pendingAnswers' => []]
+                : ['assignment' => null, 'new_task' => null, 'pendingAnswers' => []];
+        });
+        $client->method('reportStatus');
+
+        $worktreeManager = $this->createMock(WorktreeManagerInterface::class);
+        $worktreeManager->method('create')->willReturn('/worktrees/issue-42');
+        $worktreeManager->expects($this->once())->method('remove')->with('/worktrees/issue-42');
+
+        $pullRequestCreator = $this->createMock(PullRequestCreatorInterface::class);
+        $pullRequestCreator->method('push');
+        $pullRequestCreator->method('createPR')->willThrowException(
+            new \RuntimeException('GitHub API returned 403'),
+        );
+
+        $loggedErrors = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('error')->willReturnCallback(function (string $message) use (&$loggedErrors): void {
+            $loggedErrors[] = $message;
+        });
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $logger,
+            maxPolls: 2,
+            runnerFactory: $factory,
+            worktreeManager: $worktreeManager,
+            pullRequestCreator: $pullRequestCreator,
+            prOwner: 'owner',
+            prRepo: 'repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertContains(
+            'PR creation failed for issue #42: GitHub API returned 403. '
+            . 'Verify GitHub credentials and repository permissions, then retry the pup process.',
+            $loggedErrors,
+        );
+    }
+
+    public function testLabelActionFailureLogsMessageNamingComponentAndNextAction(): void
+    {
+        $task = [
+            'id'           => 'org/repo#7',
+            'issue_number' => 7,
+            'repo'         => 'org/repo',
+            'title'        => 'Failing label task',
+            'body'         => 'body',
+            'labels'       => [],
+            'state'        => 'queued',
+        ];
+
+        $labelActions = [['add' => 'done']];
+
+        $stubProcess = $this->createMock(Process::class);
+        $stubProcess->method('isRunning')->willReturn(false);
+        $stubProcess->method('getExitCode')->willReturn(0);
+
+        $factory = fn (Prompt $p, int $n, string $t, string $b): ClaudeRunner =>
+            new ClaudeRunner(prompt: $p, issueNumber: $n, title: $t, body: $b, process: $stubProcess);
+
+        $pollCount = 0;
+        $client    = $this->createMock(PupClientInterface::class);
+        $client->method('register')->willReturn(['token' => 'tok', 'poll_interval_ms' => 0]);
+        $client->method('poll')->willReturnCallback(
+            function () use ($task, &$pollCount): array {
+                $pollCount++;
+                if ($pollCount === 1) {
+                    return ['new_task' => $task, 'throttled' => false];
+                }
+                return ['new_task' => null, 'throttled' => false];
+            },
+        );
+        $client->method('postComplete')->willReturn(['label_actions' => $labelActions]);
+
+        $labelWriter = $this->createMock(GitHubLabelWriterInterface::class);
+        $labelWriter->method('applyActions')
+            ->willThrowException(new \RuntimeException('GitHub API error'));
+
+        $loggedErrors = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('error')->willReturnCallback(function (string $message) use (&$loggedErrors): void {
+            $loggedErrors[] = $message;
+        });
+
+        $command = new PupCommand(
+            pupClient: $client,
+            logger: $logger,
+            maxPolls: 2,
+            runnerFactory: $factory,
+            labelWriter: $labelWriter,
+            repo: 'org/repo',
+        );
+
+        (new CommandTester($command))->execute(['--pup-id' => 'pup-1']);
+
+        $this->assertContains(
+            'Failed to apply label actions for task #7: GitHub API error. '
+            . 'Check GitHub token permissions and apply the labels manually if needed.',
+            $loggedErrors,
+        );
+    }
+
     public function testWorktreeRemovedOnFailure(): void
     {
         $assignment = [
