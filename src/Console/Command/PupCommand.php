@@ -191,7 +191,10 @@ final class PupCommand extends Command
                             $this->logger->debug("PR created for issue #{$currentIssueNumber}: {$prUrl}");
                             $this->pupClient->reportStatus($pupId, 'complete', $prUrl);
                         } catch (\Throwable $e) {
-                            $this->logger->error("PR creation failed: {$e->getMessage()}");
+                            $this->logger->error(
+                                "PR creation failed for issue #{$currentIssueNumber}: {$e->getMessage()}. "
+                                . 'Verify GitHub credentials and repository permissions, then retry the pup process.',
+                            );
                             $this->worktreeManager->remove($currentWorktree);
                             $this->pupClient->reportStatus($pupId, 'failed', $e->getMessage());
                         }
@@ -223,7 +226,8 @@ final class PupCommand extends Command
                             );
                         } catch (\Throwable $e) {
                             $this->logger->error(
-                                "Failed to apply label actions for task #{$currentIssueNumber}: {$e->getMessage()}",
+                                "Failed to apply label actions for task #{$currentIssueNumber}: {$e->getMessage()}. "
+                                . 'Check GitHub token permissions and apply the labels manually if needed.',
                             );
                         }
                     }
