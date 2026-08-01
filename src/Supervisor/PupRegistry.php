@@ -140,6 +140,11 @@ final class PupRegistry
         );
     }
 
+    public function activePupCount(): int
+    {
+        return count($this->getAllActivePups());
+    }
+
     public function forceHeartbeatAt(string $pupId, \DateTimeImmutable $at): void
     {
         $existing = $this->find($pupId);
