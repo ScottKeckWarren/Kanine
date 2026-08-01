@@ -254,6 +254,29 @@ final class PupRegistryTest extends TestCase
         $this->assertCount(2, $activePups);
     }
 
+    public function testActivePupCountIsZeroWhenNoPupsRegistered(): void
+    {
+        $this->assertSame(0, $this->registry->activePupCount());
+    }
+
+    public function testActivePupCountCountsRegisteredPups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->register(pupId: 'pup-002', hostname: 'worker-02.local');
+
+        $this->assertSame(2, $this->registry->activePupCount());
+    }
+
+    public function testActivePupCountExcludesInactivePups(): void
+    {
+        $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
+        $this->registry->register(pupId: 'pup-002', hostname: 'worker-02.local');
+
+        $this->registry->markInactive('pup-001');
+
+        $this->assertSame(1, $this->registry->activePupCount());
+    }
+
     public function testForceHeartbeatAtSetsCustomTime(): void
     {
         $this->registry->register(pupId: 'pup-001', hostname: 'worker-01.local');
