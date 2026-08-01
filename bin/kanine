@@ -6,6 +6,13 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use GuzzleHttp\Client;
+use PhpTui\Term\Actions;
+use PhpTui\Term\Terminal as PhpTermTerminal;
+use PhpTui\Tui\Bridge\PhpTerm\PhpTermBackend;
+use PhpTui\Tui\DisplayBuilder;
+use ScottKeckWarren\Kanine\Board\BoardRenderer;
+use ScottKeckWarren\Kanine\Board\FooterRenderer;
+use ScottKeckWarren\Kanine\Board\KeyboardHandler;
 use ScottKeckWarren\Kanine\Config\ConfigInitializer;
 use ScottKeckWarren\Kanine\Config\ConfigLoader;
 use ScottKeckWarren\Kanine\Config\Configuration;
@@ -14,10 +21,14 @@ use ScottKeckWarren\Kanine\Console\Command\InitCommand;
 use ScottKeckWarren\Kanine\Console\Command\ServeCommand;
 use ScottKeckWarren\Kanine\GitHub\GitHubClient;
 use ScottKeckWarren\Kanine\GitHub\IssueLoader;
+use ScottKeckWarren\Kanine\GitHub\LabelMapper;
 use ScottKeckWarren\Kanine\Logger\LoggerFactory;
+use ScottKeckWarren\Kanine\Logger\TailBufferHandler;
 use ScottKeckWarren\Kanine\Pup\PupClient;
 use Psr\Log\LoggerInterface;
+use ScottKeckWarren\Kanine\Supervisor\Dispatcher;
 use ScottKeckWarren\Kanine\Supervisor\HttpServer;
+use ScottKeckWarren\Kanine\Supervisor\IssueStore;
 use ScottKeckWarren\Kanine\Supervisor\PupRegistry;
 use ScottKeckWarren\Kanine\Supervisor\Supervisor;
 use ScottKeckWarren\Kanine\Supervisor\TaskQueue;
@@ -80,31 +91,44 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
         $config = $defaultConfig;
     }
 
-    $logFile = $config->logFile ?? dirname(__DIR__) . '/var/log/kanine.log';
+    // The board owns the terminal (alternate screen); logging to stderr would
+    // interleave with and corrupt the TUI, so logs go only to the rotated
+    // .kanine/server-{date}.log file, with the last few lines mirrored into
+    // an in-memory tail buffer that the board renders in its log panel.
+    $logFile = $config->logFile ?? getcwd() . '/.kanine/server.log';
 
     $logDir = dirname($logFile);
     if (!is_dir($logDir)) {
         mkdir($logDir, 0755, true);
     }
 
-    $logger = (new LoggerFactory())->create(logFile: $logFile);
-    $app    = new Application($logger);
+    $tailHandler = new TailBufferHandler();
+    $logger      = (new LoggerFactory())->create(
+        logFile: $logFile,
+        logToStderr: false,
+        extraHandler: $tailHandler,
+        rotationDateFormat: 'Ymd',
+    );
+    $app = new Application($logger);
 
     $taskQueue   = new TaskQueue();
     $pupRegistry = new PupRegistry();
+    $issueStore  = new IssueStore();
     $httpServer  = new HttpServer($config->host, $config->port, $taskQueue, $pupRegistry, $logger);
     $supervisor  = new Supervisor($taskQueue, $pupRegistry, $httpServer, $logger);
 
-    $issueLoaderFactory = function (Configuration $config, LoggerInterface $logger): IssueLoader {
+    $issueLoaderFactory = function (Configuration $config, LoggerInterface $logger) use ($issueStore): IssueLoader {
         return new IssueLoader(
             client: new GitHubClient(new Client(), $config->githubToken),
             repositories: $config->repositories,
             readyLabel: $config->readyLabel,
             logger: $logger,
+            issueStore: $issueStore,
+            labelMapper: new LabelMapper($config->columns),
         );
     };
 
-    $httpServerFactory = function (UsageTracker $tracker, string $doneLabel, string $failedLabel, string $architectLabel, string $humanFeedbackLabel) use ($taskQueue, $pupRegistry, $logger, $config, $supervisor): void {
+    $httpServerFactory = function (UsageTracker $tracker, string $doneLabel, string $failedLabel, string $architectLabel, string $humanFeedbackLabel) use ($taskQueue, $pupRegistry, $issueStore, $logger, $config, $supervisor): void {
         $server = new HttpServer(
             host: $config->host,
             port: $config->port,
@@ -119,11 +143,52 @@ if (in_array('--pup', $argv ?? [], strict: true)) {
             architectLabel: $architectLabel,
             humanFeedbackLabel: $humanFeedbackLabel,
             usageTracker: $tracker,
+            issueStore: $issueStore,
         );
         $supervisor->setHttpServer($server);
     };
 
-    $app->add(new ServeCommand($configInitializer, $configLoader, $supervisor, $logger, issueLoaderFactory: $issueLoaderFactory, httpServerFactory: $httpServerFactory));
+    // php-tui/term 0.3.4's Terminal::new() declares implicit-nullable parameter
+    // defaults, which PHP 8.4 flags as E_DEPRECATED. That's vendor code we don't
+    // control (0.3.4 is the latest release), and left unhandled the deprecation
+    // notice prints straight to the terminal — corrupting the board's
+    // alternate-screen TUI, the same class of bug already fixed for our own
+    // logger. Suppress deprecations narrowly around just this call so any
+    // deprecation introduced by our own code elsewhere stays visible.
+    set_error_handler(static fn (): bool => true, E_DEPRECATED);
+    try {
+        $terminal = PhpTermTerminal::new();
+    } finally {
+        restore_error_handler();
+    }
+
+    $backend = PhpTermBackend::new($terminal);
+
+    $app->add(new ServeCommand(
+        configInitializer: $configInitializer,
+        configLoader: $configLoader,
+        supervisor: $supervisor,
+        logger: $logger,
+        issueLoaderFactory: $issueLoaderFactory,
+        httpServerFactory: $httpServerFactory,
+        boardRenderer: new BoardRenderer($config->columns),
+        dispatcher: new Dispatcher($issueStore, $pupRegistry),
+        issueStore: $issueStore,
+        pupRegistry: $pupRegistry,
+        footerRenderer: new FooterRenderer(),
+        keyboardHandler: new KeyboardHandler(),
+        logTail: $tailHandler,
+        displayFactory: static fn () => DisplayBuilder::default($backend)->build(),
+        eventProviderFactory: static fn () => $terminal->events(),
+        terminalSetup: static function () use ($terminal): void {
+            $terminal->enableRawMode();
+            $terminal->execute(Actions::alternateScreenEnable(), Actions::cursorHide());
+        },
+        terminalTeardown: static function () use ($terminal): void {
+            $terminal->execute(Actions::cursorShow(), Actions::alternateScreenDisable());
+            $terminal->disableRawMode();
+        },
+    ));
     $app->add(new InitCommand($configInitializer));
     $app->setDefaultCommand('serve');
 }
