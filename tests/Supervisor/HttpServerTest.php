@@ -230,6 +230,69 @@ final class HttpServerTest extends TestCase
         $this->assertSame(404, $response->getStatusCode());
     }
 
+    public function testHandleUnknownRouteErrorNamesMethodPathAndNextAction(): void
+    {
+        $request  = $this->makeRequest('GET', '/unknown');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'No route matches GET /unknown. Check the HTTP method and path against the pup API contract.',
+            $body['error'],
+        );
+    }
+
+    public function testHandleRegisterMissingPupIdErrorNamesFieldAndNextAction(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', '{"hostname":"host-1"}');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'pup_id is required in the POST /pups/register body; include a non-empty pup_id string.',
+            $body['error'],
+        );
+    }
+
+    public function testHandleRegisterMissingHostnameErrorNamesFieldAndNextAction(): void
+    {
+        $request  = $this->makeRequest('POST', '/pups/register', '{"pup_id":"pup-1"}');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'hostname is required in the POST /pups/register body; include a non-empty hostname string.',
+            $body['error'],
+        );
+    }
+
+    public function testHandlePollUnknownPupErrorNamesPupAndNextAction(): void
+    {
+        $request  = $this->makeRequest('GET', '/pups/unknown-pup/poll', '', 'Bearer sometoken');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'Unknown pup: unknown-pup. Register the pup via POST /pups/register before polling.',
+            $body['error'],
+        );
+    }
+
+    public function testHandlePollUnauthorizedErrorNamesPupAndNextAction(): void
+    {
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest('GET', '/pups/pup-1/poll', '', 'Bearer wrongtoken');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'Unauthorized poll for pup pup-1: missing or invalid bearer token. '
+            . 'Re-register the pup to obtain a valid token.',
+            $body['error'],
+        );
+    }
+
     // -------------------------------------------------------------------------
     // Error handling: malformed JSON
     // -------------------------------------------------------------------------
@@ -406,6 +469,27 @@ final class HttpServerTest extends TestCase
         $this->assertSame(403, $response->getStatusCode());
     }
 
+    public function testStatusEndpointForbiddenErrorNamesTaskAndOwningPup(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $this->registry->register(pupId: 'pup-2', hostname: 'host-2');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/status',
+            '{"pup_id":"pup-2","message":"working on it"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'Forbidden: task task-1 is assigned to pup pup-1, not pup-2. Only the assigned pup can report status.',
+            $body['error'],
+        );
+    }
+
     public function testStatusEndpointReturns404ForUnknownTask(): void
     {
         $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
@@ -484,6 +568,53 @@ final class HttpServerTest extends TestCase
         $response = $this->server->handle($request);
 
         $this->assertSame(401, $response->getStatusCode());
+    }
+
+    public function testCompleteMissingTokenErrorNamesEndpointAndNextAction(): void
+    {
+        $request  = $this->makeRequest('POST', '/tasks/task-1/complete', '{"pup_id":"pup-1","outcome":"success"}');
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'Unauthorized: missing bearer token for POST /tasks/task-1/complete. '
+            . "Include 'Authorization: Bearer <token>' from registration.",
+            $body['error'],
+        );
+    }
+
+    public function testCompleteForbiddenErrorNamesTaskAndNextAction(): void
+    {
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+        $token2 = $this->registry->register(pupId: 'pup-2', hostname: 'host-2');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-2","outcome":"success"}',
+            "Bearer {$token2}",
+        );
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'Forbidden: task task-1 is assigned to a different pup. '
+            . 'Only the assigned pup can report completion.',
+            $body['error'],
+        );
     }
 
     public function testCompleteReturns404ForUnknownTask(): void
@@ -826,6 +957,38 @@ final class HttpServerTest extends TestCase
         $response = $this->server->handle($request);
 
         $this->assertSame(422, $response->getStatusCode());
+    }
+
+    public function testCompleteInvalidOutcomeErrorNamesValueAndValidOptions(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $task = new Task(
+            id: 'task-1',
+            issueNumber: 10,
+            repo: 'org/repo',
+            title: 'A task',
+            body: 'details',
+            labels: [],
+            state: TaskState::Assigned,
+        );
+        $this->queue->enqueue($task);
+        $this->queue->assignTo('task-1', 'pup-1');
+        $this->registry->assign(pupId: 'pup-1', taskId: 'task-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/tasks/task-1/complete',
+            '{"pup_id":"pup-1","outcome":"invalid-outcome"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            "Invalid outcome 'invalid-outcome' for task task-1; use 'success' or 'failure'.",
+            $body['error'],
+        );
     }
 
     public function testCompleteMissingOutcomeReturns422(): void
@@ -1360,6 +1523,25 @@ final class HttpServerTest extends TestCase
         $this->assertSame(400, $response->getStatusCode());
     }
 
+    public function testPupStatusEndpointInvalidStatusErrorNamesValueAndValidOptions(): void
+    {
+        $token = $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/status',
+            '{"status":"invalid_status"}',
+            "Bearer {$token}",
+        );
+        $response = $this->server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            "Invalid status 'invalid_status' for pup pup-1; use one of: working, blocked, complete, failed.",
+            $body['error'],
+        );
+    }
+
     public function testPupStatusEndpointReturns404ForUnknownPup(): void
     {
         $request  = $this->makeRequest(
@@ -1421,6 +1603,25 @@ final class HttpServerTest extends TestCase
         $this->assertSame(400, $response->getStatusCode());
     }
 
+    public function testPostQuestionMissingBodyErrorNamesFieldAndNextAction(): void
+    {
+        $server = $this->makeServerWithQuestionStore();
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/questions',
+            '{"questionId":"q-1"}',
+        );
+        $response = $server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'body is required in the POST /pups/pup-1/questions body; include a non-empty body string.',
+            $body['error'],
+        );
+    }
+
     public function testPostQuestionReturns400ForMissingQuestionId(): void
     {
         $server = $this->makeServerWithQuestionStore();
@@ -1434,6 +1635,25 @@ final class HttpServerTest extends TestCase
         $response = $server->handle($request);
 
         $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testPostQuestionMissingQuestionIdErrorNamesFieldAndNextAction(): void
+    {
+        $server = $this->makeServerWithQuestionStore();
+        $this->registry->register(pupId: 'pup-1', hostname: 'host-1');
+
+        $request  = $this->makeRequest(
+            'POST',
+            '/pups/pup-1/questions',
+            '{"body":"What to do?"}',
+        );
+        $response = $server->handle($request);
+
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame(
+            'questionId is required in the POST /pups/pup-1/questions body; include a non-empty questionId string.',
+            $body['error'],
+        );
     }
 
     public function testPostQuestionReturns409ForDuplicateQuestionId(): void
