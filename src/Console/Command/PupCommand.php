@@ -178,7 +178,9 @@ final class PupCommand extends Command
                     if ($outcome === 'success') {
                         try {
                             $branch = 'issue-' . $currentIssueNumber;
+                            $this->logger->debug("Pushing branch {$branch} for issue #{$currentIssueNumber}");
                             $this->pullRequestCreator?->push($currentWorktree, $branch);
+                            $this->logger->debug("Creating PR for branch {$branch}");
                             $prUrl = $this->pullRequestCreator?->createPR(
                                 $this->prOwner,
                                 $this->prRepo,
@@ -186,6 +188,7 @@ final class PupCommand extends Command
                                 (string) ($currentTitle ?? 'Fix issue #' . $currentIssueNumber),
                                 (string) ($currentBody ?? ''),
                             ) ?? '';
+                            $this->logger->debug("PR created for issue #{$currentIssueNumber}: {$prUrl}");
                             $this->pupClient->reportStatus($pupId, 'complete', $prUrl);
                         } catch (\Throwable $e) {
                             $this->logger->error("PR creation failed: {$e->getMessage()}");
@@ -264,8 +267,10 @@ final class PupCommand extends Command
 
                 $worktreePath = null;
                 if ($this->worktreeManager !== null) {
+                    $this->logger->debug("Creating worktree for issue #{$issueNumber}");
                     $worktreePath    = $this->worktreeManager->create($issueNumber);
                     $currentWorktree = $worktreePath;
+                    $this->logger->debug("Worktree ready at {$worktreePath}");
                 }
 
                 $resolvedPrompt     = $this->promptResolver->resolve($labels);
@@ -293,6 +298,9 @@ final class PupCommand extends Command
 
                     $detectedQuestions = ($this->questionDetector)($runner->getLines());
                     foreach ($detectedQuestions as $detectedQuestion) {
+                        $this->logger->debug(
+                            "Detected question {$detectedQuestion['questionId']} for issue #{$currentIssueNumber}",
+                        );
                         $this->pupClient->postQuestion(
                             pupId: $pupId,
                             questionId: $detectedQuestion['questionId'],
@@ -304,6 +312,7 @@ final class PupCommand extends Command
                     if (($now - $lastStatusAt) >= $this->statusIntervalMs) {
                         $lastStatusAt = $now;
                         $latestLine   = $runner->getLatestLine() ?? '';
+                        $this->logger->debug("Claude status tick for issue #{$currentIssueNumber}: {$latestLine}");
 
                         if ($currentTaskId !== null) {
                             $this->pupClient->postStatus(

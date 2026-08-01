@@ -46,6 +46,8 @@ final class PupClient implements PupClientInterface
         $this->lastPupId    = $pupId;
         $this->lastHostname = $hostname;
 
+        $this->logger->debug("Registering pup {$pupId} ({$hostname}) with supervisor");
+
         $response = $this->guzzle->post("{$this->baseUrl}/pups/register", [
             'json' => [
                 'pup_id'   => $pupId,
@@ -55,6 +57,8 @@ final class PupClient implements PupClientInterface
 
         /** @var array{token: string, poll_interval_ms: int} $data */
         $data = json_decode((string) $response->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        $this->logger->debug("Registration response for pup {$pupId}: poll_interval_ms={$data['poll_interval_ms']}");
 
         return $data;
     }
@@ -71,8 +75,17 @@ final class PupClient implements PupClientInterface
     {
         while (true) {
             try {
+                $this->logger->debug("Polling supervisor as pup {$pupId} (status={$status})");
                 $result               = $this->doPoll($pupId, $token, $status, $usagePct);
                 $this->backoffSeconds = 1;
+
+                $hasAssignment = ($result['new_task'] ?? null) !== null;
+                $throttled     = $result['throttled'] ?? false;
+                $this->logger->debug(
+                    "Poll result for pup {$pupId}: assignment=" . ($hasAssignment ? 'yes' : 'no')
+                        . ', throttled=' . ($throttled ? 'yes' : 'no'),
+                );
+
                 return $result;
             } catch (ConnectException) {
                 $delay = min($this->backoffSeconds, self::MAX_BACKOFF_SECONDS);
@@ -96,6 +109,8 @@ final class PupClient implements PupClientInterface
 
     public function reportStatus(string $pupId, string $status, string $message = ''): void
     {
+        $this->logger->debug("Reporting status for pup {$pupId}: {$status}" . ($message !== '' ? " ({$message})" : ''));
+
         $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/status", [
             'json' => [
                 'status'  => $status,
@@ -106,6 +121,8 @@ final class PupClient implements PupClientInterface
 
     public function postStatus(string $pupId, string $token, string $taskId, string $message): void
     {
+        $this->logger->debug("Posting task status for pup {$pupId} on task {$taskId}: {$message}");
+
         $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/status", [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
@@ -125,6 +142,8 @@ final class PupClient implements PupClientInterface
 
     public function postQuestion(string $pupId, string $questionId, string $body): void
     {
+        $this->logger->debug("Posting question {$questionId} for pup {$pupId}");
+
         $response = $this->guzzle->post("{$this->baseUrl}/pups/{$pupId}/questions", [
             'json' => [
                 'questionId' => $questionId,
@@ -150,6 +169,8 @@ final class PupClient implements PupClientInterface
         string $summary,
         ?float $usagePct,
     ): array {
+        $this->logger->debug("Posting completion for pup {$pupId} on task {$taskId}: outcome={$outcome}");
+
         $response = $this->guzzle->post("{$this->baseUrl}/tasks/{$taskId}/complete", [
             'headers' => [
                 'Authorization' => "Bearer {$token}",
